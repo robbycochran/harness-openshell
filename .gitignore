@@ -1,0 +1,9 @@
+# Credentials — never commit
+*-token.txt
+*.json.key
+acs-ai-sa.json
+kubeconfig
+
+# Local state
+*.log
+*.tmp
