@@ -1,117 +1,144 @@
 #!/usr/bin/env bash
 # Create and connect to an OpenShell sandbox on the OCP cluster.
 #
+# Credentials come from the provider system (see setup-providers.sh).
+# File-based credentials (ADC, GWS) are uploaded at sandbox creation time.
+#
 # Usage:
 #   ./ocp-sandbox.sh                       # interactive Claude session
 #   ./ocp-sandbox.sh --shell               # interactive shell (type 'claude' to start)
 #   ./ocp-sandbox.sh --name my-sandbox     # named sandbox
-#   ./ocp-sandbox.sh --keep                # keep sandbox alive after exit
+#   ./ocp-sandbox.sh --no-keep             # delete sandbox after exit
 #   ./ocp-sandbox.sh --rejoin my-sandbox   # reconnect to existing sandbox
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-export KUBECONFIG="${KUBECONFIG:-$REPO_ROOT/kubeconfig}"
-export OPENSHELL_GATEWAY=ocp
+GATEWAY_NAME="${GATEWAY_NAME:-ocp}"
+export OPENSHELL_GATEWAY="$GATEWAY_NAME"
 
-CLI="$REPO_ROOT/target/debug/openshell"
-[[ -x "$CLI" ]] || { echo "CLI not built. Run: cargo build -p openshell-cli"; exit 1; }
+CLI="${OPENSHELL_CLI:-openshell}"
+if ! command -v "$CLI" &>/dev/null; then
+  REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+  CLI="$REPO_ROOT/OpenShell/target/debug/openshell"
+fi
+[[ -x "$CLI" ]] || { echo "ERROR: openshell CLI not found. Install it or set OPENSHELL_CLI."; exit 1; }
 
-# ── Parse args ──────────────────────────────────────────────────────────
+# ── Parse args ─────────────────────────────────────────────────────────
 SHELL_MODE=false
-KEEP_FLAG="--no-keep"
+NO_KEEP=false
 REJOIN=""
 NAME_ARGS=()
+EXTRA_PROVIDERS=()
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --shell)  SHELL_MODE=true; shift ;;
-    --keep)   KEEP_FLAG=""; shift ;;
-    --rejoin) REJOIN="$2"; shift 2 ;;
-    --name)   NAME_ARGS=(--name "$2"); shift 2 ;;
-    *)        shift ;;
+    --shell)     SHELL_MODE=true; shift ;;
+    --no-keep)   NO_KEEP=true; shift ;;
+    --rejoin)    REJOIN="$2"; shift 2 ;;
+    --name)      NAME_ARGS=(--name "$2"); shift 2 ;;
+    --provider)  EXTRA_PROVIDERS+=(--provider "$2"); shift 2 ;;
+    *)           shift ;;
   esac
 done
 
-# ── Ensure port-forward ────────────────────────────────────────────────
+# ── Ensure port-forward ───────────────────────────────────────────────
 if ! lsof -i :18443 -sTCP:LISTEN >/dev/null 2>&1; then
   echo "Starting port-forward..."
   nohup kubectl port-forward svc/openshell -n openshell 18443:8080 >/tmp/openshell-pf.log 2>&1 &
   sleep 2
 fi
 
-# ── Ensure gateway config ──────────────────────────────────────────────
-if [[ ! -f "$HOME/.config/openshell/gateways/ocp/metadata.json" ]]; then
-  TLSDIR="$HOME/.openshell-ocp-tls"
-  mkdir -p "$HOME/.config/openshell/gateways/ocp/mtls"
-  cp "$TLSDIR/ca.crt" "$HOME/.config/openshell/gateways/ocp/mtls/"
-  cp "$TLSDIR/client.crt" "$HOME/.config/openshell/gateways/ocp/mtls/tls.crt"
-  cp "$TLSDIR/client.key" "$HOME/.config/openshell/gateways/ocp/mtls/tls.key"
-  cat > "$HOME/.config/openshell/gateways/ocp/metadata.json" <<'EOF'
-{"name":"ocp","gateway_endpoint":"https://127.0.0.1:18443","is_remote":false,"gateway_port":18443,"auth_mode":"mtls"}
-EOF
-fi
-
-# ── Rejoin mode ─────────────────────────────────────────────────────────
+# ── Rejoin mode ────────────────────────────────────────────────────────
 if [[ -n "$REJOIN" ]]; then
-  echo "Reconnecting to $REJOIN — type 'claude' to start."
+  echo "Reconnecting to $REJOIN..."
   exec "$CLI" sandbox connect "$REJOIN"
 fi
 
-# ── Fetch credentials ───────────────────────────────────────────────────
-echo "Fetching credentials..."
-GH_TOKEN=$(kubectl get secret github-token -n openshell -o jsonpath='{.data.GITHUB_TOKEN}' | base64 -d)
-JIRA_URL=$(kubectl get secret atlassian-creds -n openshell -o jsonpath='{.data.JIRA_URL}' | base64 -d)
-JIRA_USER=$(kubectl get secret atlassian-creds -n openshell -o jsonpath='{.data.JIRA_USERNAME}' | base64 -d)
-JIRA_TOKEN=$(kubectl get secret atlassian-creds -n openshell -o jsonpath='{.data.JIRA_API_TOKEN}' | base64 -d)
-GWS_CS_B64=$(kubectl get secret gws-credentials -n openshell -o jsonpath='{.data.client_secret\.json}')
-GWS_CR_B64=$(kubectl get secret gws-credentials -n openshell -o jsonpath='{.data.credentials\.enc}')
-GWS_EK_B64=$(kubectl get secret gws-credentials -n openshell -o jsonpath='{.data.encryption_key}')
-GWS_TC_B64=$(kubectl get secret gws-credentials -n openshell -o jsonpath='{.data.token_cache\.json}')
+# ── Build provider flags from registered providers ─────────────────────
+PROVIDER_FLAGS=()
+if "$CLI" provider get github &>/dev/null 2>&1; then
+  PROVIDER_FLAGS+=(--provider github)
+fi
+if "$CLI" provider get atlassian &>/dev/null 2>&1; then
+  PROVIDER_FLAGS+=(--provider atlassian)
+fi
+if "$CLI" provider get anthropic &>/dev/null 2>&1; then
+  PROVIDER_FLAGS+=(--provider anthropic)
+fi
+PROVIDER_FLAGS+=("${EXTRA_PROVIDERS[@]}")
 
-[[ -f "$HOME/.config/gcloud/application_default_credentials.json" ]] || {
-  echo "No ADC. Run: gcloud auth application-default login"; exit 1
-}
+# ── Build upload flags ─────────────────────────────────────────────────
+UPLOAD_ARGS=()
 
-VERTEX_PROJECT="itpc-gcp-hcm-pe-eng-claude"
-VERTEX_REGION="us-east5"
+# Vertex AI ADC
+ADC_FILE="${GOOGLE_APPLICATION_CREDENTIALS:-$HOME/.config/gcloud/application_default_credentials.json}"
+if [[ -f "$ADC_FILE" ]]; then
+  UPLOAD_ARGS+=(--upload "$ADC_FILE:/tmp/adc.json")
+fi
 
-# ── Create sandbox ──────────────────────────────────────────────────────
-# Phase 1: create sandbox + upload ADC + run setup (setup consumes stdin, that's ok)
-# Phase 2: connect with clean stdin for Claude
-#
-# The sandbox is always created with --keep so we can connect in phase 2.
-# If the user didn't pass --keep, we note it and delete after disconnect.
-USER_WANTS_KEEP=false
-[[ "$KEEP_FLAG" == "" ]] && USER_WANTS_KEEP=true
+VERTEX_PROJECT="${VERTEX_PROJECT:-}"
+VERTEX_REGION="${VERTEX_REGION:-}"
 
+# GWS credentials directory
+GWS_CONFIG_DIR="${GWS_CONFIG_DIR:-$HOME/.config/gws}"
+GWS_UPLOAD=false
+if [[ -d "$GWS_CONFIG_DIR" && -f "$GWS_CONFIG_DIR/client_secret.json" ]]; then
+  GWS_UPLOAD=true
+fi
+
+# ── Sandbox env vars (non-provider, Vertex AI config) ──────────────────
+ENV_BLOCK=""
+if [[ -f "$ADC_FILE" ]]; then
+  ENV_BLOCK+="export GOOGLE_APPLICATION_CREDENTIALS=/tmp/adc.json
+"
+  ENV_BLOCK+="export CLAUDE_CODE_USE_VERTEX=1
+"
+  ENV_BLOCK+="export CLOUD_ML_REGION=global
+"
+  [[ -n "$VERTEX_PROJECT" ]] && ENV_BLOCK+="export ANTHROPIC_VERTEX_PROJECT_ID=$VERTEX_PROJECT
+export GOOGLE_CLOUD_PROJECT=$VERTEX_PROJECT
+"
+  [[ -n "$VERTEX_REGION" ]] && ENV_BLOCK+="export GOOGLE_CLOUD_LOCATION=$VERTEX_REGION
+"
+fi
+ENV_BLOCK+='export GOOGLE_WORKSPACE_CLI_CONFIG_DIR=/tmp/gws-config
+'
+ENV_BLOCK+='export PATH="/sandbox/.local/bin:$PATH"
+'
+
+# ── Build Jira env for MCP config ──────────────────────────────────────
+# The provider injects JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN as env vars.
+# We reference them in the claude.json MCP config at startup.
+
+# ── Create sandbox ─────────────────────────────────────────────────────
 echo "Creating sandbox..."
+
+KEEP_ARGS=()
+$NO_KEEP && KEEP_ARGS=(--no-keep)
+
+GWS_SETUP=""
+if $GWS_UPLOAD; then
+  GWS_SETUP='
+mkdir -p /tmp/gws-config
+cp /sandbox/gws-upload/* /tmp/gws-config/ 2>/dev/null || true
+'
+  UPLOAD_ARGS+=(--upload "$GWS_CONFIG_DIR:/sandbox/gws-upload")
+fi
+
 "$CLI" sandbox create \
   --policy "$SCRIPT_DIR/vertex-policy.yaml" \
-  --upload "$HOME/.config/gcloud/application_default_credentials.json:/tmp/adc.json" \
-  --no-bootstrap \
-  --keep \
+  "${UPLOAD_ARGS[@]}" \
+  "${PROVIDER_FLAGS[@]}" \
+  "${KEEP_ARGS[@]}" \
   "${NAME_ARGS[@]}" \
   -- bash -c '
-# ── Setup (runs once, stdin is consumed, thats fine) ──
+# ── Sandbox setup (runs once) ──────────────────────────────────────
 rm -rf /sandbox/.claude/plugins /sandbox/.claude.json 2>/dev/null
 
-# Env file for reconnects
-cat > /sandbox/.openshell-env <<ENVBLOCK
-export GOOGLE_APPLICATION_CREDENTIALS=/tmp/adc.json
-export CLAUDE_CODE_USE_VERTEX=1
-export CLOUD_ML_REGION=global
-export ANTHROPIC_VERTEX_PROJECT_ID='"$VERTEX_PROJECT"'
-export GOOGLE_CLOUD_LOCATION='"$VERTEX_REGION"'
-export GOOGLE_CLOUD_PROJECT='"$VERTEX_PROJECT"'
-export GITHUB_TOKEN='"'$GH_TOKEN'"'
-export JIRA_URL='"'$JIRA_URL'"'
-export JIRA_USERNAME='"'$JIRA_USER'"'
-export JIRA_API_TOKEN='"'$JIRA_TOKEN'"'
-export GOOGLE_WORKSPACE_CLI_CONFIG_DIR=/tmp/gws-config
-export PATH="/sandbox/.local/bin:\$PATH"
-ENVBLOCK
+# Environment file for reconnects
+cat > /sandbox/.openshell-env <<ENVEOF
+'"$ENV_BLOCK"'ENVEOF
 
 grep -q openshell-env /sandbox/.bashrc 2>/dev/null || {
   echo ". ~/.openshell-env 2>/dev/null" >> /sandbox/.bashrc
@@ -119,17 +146,29 @@ grep -q openshell-env /sandbox/.bashrc 2>/dev/null || {
 }
 
 . /sandbox/.openshell-env
+'"$GWS_SETUP"'
 
-# GWS config
-mkdir -p /tmp/gws-config
-echo "'"$GWS_CS_B64"'" | base64 -d > /tmp/gws-config/client_secret.json
-echo "'"$GWS_CR_B64"'" | base64 -d > /tmp/gws-config/credentials.enc
-echo "'"$GWS_EK_B64"'" | base64 -d > /tmp/gws-config/.encryption_key
-echo "'"$GWS_TC_B64"'" | base64 -d > /tmp/gws-config/token_cache.json
-
-# Claude config
+# Claude MCP config — uses env vars injected by the atlassian provider
 cat > /sandbox/.claude.json <<CJEOF
-{"autoUpdates":false,"hasCompletedOnboarding":true,"mcpServers":{"atlassian":{"type":"stdio","command":"/sandbox/.venv/bin/mcp-atlassian","args":[],"env":{"JIRA_URL":"'"$JIRA_URL"'","JIRA_USERNAME":"'"$JIRA_USER"'","JIRA_API_TOKEN":"'"$JIRA_TOKEN"'","CONFLUENCE_URL":"'"$JIRA_URL"'/wiki","CONFLUENCE_USERNAME":"'"$JIRA_USER"'","CONFLUENCE_API_TOKEN":"'"$JIRA_TOKEN"'"}}}}
+{
+  "autoUpdates": false,
+  "hasCompletedOnboarding": true,
+  "mcpServers": {
+    "atlassian": {
+      "type": "stdio",
+      "command": "/sandbox/.venv/bin/mcp-atlassian",
+      "args": [],
+      "env": {
+        "JIRA_URL": "${JIRA_URL:-}",
+        "JIRA_USERNAME": "${JIRA_USERNAME:-}",
+        "JIRA_API_TOKEN": "${JIRA_API_TOKEN:-}",
+        "CONFLUENCE_URL": "${JIRA_URL:-}/wiki",
+        "CONFLUENCE_USERNAME": "${JIRA_USERNAME:-}",
+        "CONFLUENCE_API_TOKEN": "${JIRA_API_TOKEN:-}"
+      }
+    }
+  }
+}
 CJEOF
 
 mkdir -p /sandbox/.claude
@@ -140,32 +179,23 @@ CSEOF
 # Install tools
 pip install -q mcp-atlassian </dev/null >/dev/null 2>&1 || true
 mkdir -p /sandbox/.local/bin
-curl -fsSL -L https://github.com/googleworkspace/cli/releases/download/v0.22.5/google-workspace-cli-x86_64-unknown-linux-gnu.tar.gz </dev/null 2>/dev/null | tar xz -C /sandbox/.local/bin 2>/dev/null || true
+curl -fsSL -L https://github.com/googleworkspace/cli/releases/download/v0.22.5/google-workspace-cli-x86_64-unknown-linux-gnu.tar.gz </dev/null 2>/dev/null \
+  | tar xz -C /sandbox/.local/bin 2>/dev/null || true
 
-# Auth gh
-echo "$GITHUB_TOKEN" | gh auth login --with-token </dev/null >/dev/null 2>&1 || true
+# Auth gh CLI using the token injected by the github provider
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  echo "$GITHUB_TOKEN" | gh auth login --with-token </dev/null >/dev/null 2>&1 || true
+fi
 
 echo "Setup complete."
 ' 2>&1
 
-# Get sandbox name
+# ── Get sandbox name ───────────────────────────────────────────────────
 if [[ ${#NAME_ARGS[@]} -gt 0 ]]; then
   SANDBOX_NAME="${NAME_ARGS[1]}"
 else
-  SANDBOX_NAME=$("$CLI" sandbox list 2>&1 | grep Ready | tail -1 | awk '{print $1}')
+  SANDBOX_NAME=$("$CLI" sandbox list --names 2>&1 | tail -1)
 fi
 
 echo "Connecting to $SANDBOX_NAME..."
-
-# Phase 2: connect with clean stdin — Claude gets pristine I/O
-if $SHELL_MODE; then
-  "$CLI" sandbox connect "$SANDBOX_NAME"
-else
-  "$CLI" sandbox connect "$SANDBOX_NAME"
-fi
-
-# Cleanup if user didn't want --keep
-if ! $USER_WANTS_KEEP; then
-  echo "Cleaning up sandbox $SANDBOX_NAME..."
-  "$CLI" sandbox delete "$SANDBOX_NAME" 2>/dev/null || true
-fi
+"$CLI" sandbox connect "$SANDBOX_NAME"

@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
-# Deploy OpenShell to an OpenShift cluster.
-# Assumes: KUBECONFIG set, kubectl/helm on PATH, quay.io images already pushed.
+# Deploy OpenShell to an OpenShift cluster using the official Helm chart.
 #
 # Usage:
 #   ./deploy.sh                           # full deploy
 #   ./deploy.sh --kubeconfig ./kubeconfig  # explicit kubeconfig
-#   ./deploy.sh --skip-images             # skip image build (use existing)
+#
+# Environment variables (all optional, sensible defaults provided):
+#   OPENSHELL_REPO          — path to NVIDIA/OpenShell checkout (default: ../OpenShell)
+#   GATEWAY_IMAGE_REPO      — gateway image repo   (default: ghcr.io/nvidia/openshell/gateway)
+#   GATEWAY_IMAGE_TAG       — gateway image tag     (default: chart appVersion)
+#   SUPERVISOR_IMAGE_REPO   — supervisor image repo (default: ghcr.io/nvidia/openshell/supervisor)
+#   SANDBOX_IMAGE           — sandbox base image    (default: ghcr.io/nvidia/openshell-community/sandboxes/base:latest)
+#   PULL_SECRET             — imagePullSecrets name  (default: none)
+#   GATEWAY_NAME            — CLI gateway name       (default: ocp)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Parse args
-SKIP_IMAGES=true  # images are pre-built on quay.io
 while [[ $# -gt 0 ]]; do
   case $1 in
     --kubeconfig) export KUBECONFIG="$2"; shift 2 ;;
@@ -20,144 +25,110 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Require OpenShell repo to be cloned alongside this harness
 OPENSHELL_REPO="${OPENSHELL_REPO:-$(cd "$SCRIPT_DIR/.." && pwd)/OpenShell}"
 if [[ ! -d "$OPENSHELL_REPO/deploy/helm/openshell" ]]; then
-  echo "OpenShell repo not found at $OPENSHELL_REPO"
+  echo "ERROR: OpenShell repo not found at $OPENSHELL_REPO"
   echo "Set OPENSHELL_REPO or clone NVIDIA/OpenShell alongside this repo"
   exit 1
 fi
+
+GATEWAY_NAME="${GATEWAY_NAME:-ocp}"
 
 echo "Using OpenShell repo: $OPENSHELL_REPO"
 echo "Using KUBECONFIG: ${KUBECONFIG:-default}"
 echo ""
 
-# ── Step 1: Namespace ──
-echo "=== Creating namespace ==="
+# ── Step 1: Namespace ──────────────────────────────────────────────────
+echo "=== Step 1: Creating namespace ==="
 kubectl create ns openshell 2>/dev/null || true
-kubectl label ns openshell pod-security.kubernetes.io/enforce=privileged --overwrite
-kubectl label ns openshell pod-security.kubernetes.io/warn=privileged --overwrite
+kubectl label ns openshell \
+  pod-security.kubernetes.io/enforce=privileged \
+  pod-security.kubernetes.io/warn=privileged \
+  --overwrite
 
-# ── Step 2: Sandbox CRD + controller ──
-echo "=== Installing Sandbox CRD ==="
+# ── Step 2: Sandbox CRD + controller ──────────────────────────────────
+echo "=== Step 2: Installing Sandbox CRD ==="
 kubectl apply -f "$OPENSHELL_REPO/deploy/kube/manifests/agent-sandbox.yaml"
 
-# ── Step 3: SCCs ──
-echo "=== Granting SCCs ==="
-kubectl create clusterrolebinding openshell-sa-anyuid --clusterrole=system:openshift:scc:anyuid --serviceaccount=openshell:openshell 2>/dev/null || true
-kubectl create clusterrolebinding openshell-sa-privileged --clusterrole=system:openshift:scc:privileged --serviceaccount=openshell:openshell 2>/dev/null || true
-kubectl create clusterrolebinding openshell-default-privileged --clusterrole=system:openshift:scc:privileged --serviceaccount=openshell:default 2>/dev/null || true
-kubectl create clusterrolebinding agent-sandbox-admin --clusterrole=cluster-admin --serviceaccount=agent-sandbox-system:agent-sandbox-controller 2>/dev/null || true
+# ── Step 3: OpenShift SCCs ────────────────────────────────────────────
+echo "=== Step 3: Granting OpenShift SCCs ==="
+kubectl create clusterrolebinding openshell-sa-anyuid \
+  --clusterrole=system:openshift:scc:anyuid \
+  --serviceaccount=openshell:openshell 2>/dev/null || true
+kubectl create clusterrolebinding openshell-sa-privileged \
+  --clusterrole=system:openshift:scc:privileged \
+  --serviceaccount=openshell:openshell 2>/dev/null || true
+kubectl create clusterrolebinding openshell-default-privileged \
+  --clusterrole=system:openshift:scc:privileged \
+  --serviceaccount=openshell:default 2>/dev/null || true
+kubectl create clusterrolebinding agent-sandbox-admin \
+  --clusterrole=cluster-admin \
+  --serviceaccount=agent-sandbox-system:agent-sandbox-controller 2>/dev/null || true
 
-# ── Step 4: TLS certificates ──
-echo "=== Generating TLS certificates ==="
-TLSDIR="$HOME/.openshell-ocp-tls"
-mkdir -p "$TLSDIR"
+# Also grant privileged to the sandbox service account created by Helm
+kubectl create clusterrolebinding openshell-sandbox-privileged \
+  --clusterrole=system:openshift:scc:privileged \
+  --serviceaccount=openshell:openshell-sandbox 2>/dev/null || true
 
-if [[ ! -f "$TLSDIR/ca.crt" ]]; then
-  openssl req -x509 -newkey rsa:2048 -nodes -keyout "$TLSDIR/ca.key" -out "$TLSDIR/ca.crt" -days 365 -subj "/CN=openshell-ca" 2>/dev/null
-  openssl req -newkey rsa:2048 -nodes -keyout "$TLSDIR/server.key" -out "$TLSDIR/server.csr" \
-    -subj "/CN=openshell.openshell.svc.cluster.local" \
-    -addext "subjectAltName=DNS:openshell.openshell.svc.cluster.local,DNS:openshell,DNS:localhost,IP:127.0.0.1" 2>/dev/null
-  openssl x509 -req -in "$TLSDIR/server.csr" -CA "$TLSDIR/ca.crt" -CAkey "$TLSDIR/ca.key" -CAcreateserial \
-    -out "$TLSDIR/server.crt" -days 365 \
-    -extfile <(echo "subjectAltName=DNS:openshell.openshell.svc.cluster.local,DNS:openshell,DNS:localhost,IP:127.0.0.1") 2>/dev/null
-  openssl req -newkey rsa:2048 -nodes -keyout "$TLSDIR/client.key" -out "$TLSDIR/client.csr" -subj "/CN=openshell-client" 2>/dev/null
-  openssl x509 -req -in "$TLSDIR/client.csr" -CA "$TLSDIR/ca.crt" -CAkey "$TLSDIR/ca.key" -CAcreateserial \
-    -out "$TLSDIR/client.crt" -days 365 2>/dev/null
-  echo "  Generated new certs at $TLSDIR"
-else
-  echo "  Using existing certs at $TLSDIR"
+# ── Step 4: Pull secret (optional) ───────────────────────────────────
+if [[ -f "$SCRIPT_DIR/quay-pull-secret.yaml" ]]; then
+  echo "=== Step 4: Applying pull secret ==="
+  kubectl apply -n openshell -f "$SCRIPT_DIR/quay-pull-secret.yaml"
 fi
 
-# ── Step 5: K8s secrets ──
-echo "=== Creating K8s secrets ==="
-kubectl create secret tls openshell-server-tls -n openshell --cert="$TLSDIR/server.crt" --key="$TLSDIR/server.key" 2>/dev/null || true
-kubectl create secret generic openshell-server-client-ca -n openshell --from-file=ca.crt="$TLSDIR/ca.crt" 2>/dev/null || true
-kubectl create secret generic openshell-client-tls -n openshell --from-file=ca.crt="$TLSDIR/ca.crt" --from-file=tls.crt="$TLSDIR/client.crt" --from-file=tls.key="$TLSDIR/client.key" 2>/dev/null || true
-kubectl create secret generic openshell-ssh-handshake -n openshell --from-literal=secret="$(openssl rand -hex 32)" 2>/dev/null || true
-kubectl apply -n openshell -f "$SCRIPT_DIR/quay-pull-secret.yaml" 2>/dev/null || true
+# ── Step 5: Helm install gateway ──────────────────────────────────────
+echo "=== Step 5: Deploying gateway via Helm ==="
 
-# Credential secrets — create only if they don't exist
-kubectl get secret github-token -n openshell >/dev/null 2>&1 || echo "WARNING: github-token secret missing — create manually"
-kubectl get secret atlassian-creds -n openshell >/dev/null 2>&1 || echo "WARNING: atlassian-creds secret missing — create manually"
-kubectl get secret gws-credentials -n openshell >/dev/null 2>&1 || echo "WARNING: gws-credentials secret missing — create manually"
-kubectl get secret gcp-adc -n openshell >/dev/null 2>&1 || echo "WARNING: gcp-adc secret missing — create manually"
-
-# ── Step 6: Supervisor DaemonSet ──
-echo "=== Deploying supervisor DaemonSet ==="
-cat <<'EOF' | kubectl apply -f -
-apiVersion: apps/v1
-kind: DaemonSet
-metadata:
-  name: openshell-supervisor-installer
-  namespace: openshell
-spec:
-  selector:
-    matchLabels:
-      app: openshell-supervisor-installer
-  template:
-    metadata:
-      labels:
-        app: openshell-supervisor-installer
-    spec:
-      serviceAccountName: default
-      imagePullSecrets:
-      - name: quay-pull-secret
-      initContainers:
-      - name: install
-        image: quay.io/rcochran/scratch:openshell-supervisor-dev
-        command: ["sh", "-c", "mkdir -p /host/opt/openshell/bin && cp /usr/local/bin/openshell-sandbox /host/opt/openshell/bin/openshell-sandbox && chmod 755 /host/opt/openshell/bin/openshell-sandbox && chcon -t container_file_t /host/opt/openshell/bin && chcon -t container_file_t /host/opt/openshell/bin/openshell-sandbox && echo installed"]
-        securityContext:
-          privileged: true
-        volumeMounts:
-        - name: host-root
-          mountPath: /host
-      containers:
-      - name: pause
-        image: registry.k8s.io/pause:3.10
-      volumes:
-      - name: host-root
-        hostPath:
-          path: /
-      tolerations:
-      - operator: Exists
-EOF
-
-# ── Step 7: Helm install gateway ──
-echo "=== Deploying gateway via Helm ==="
-helm upgrade --install openshell "$OPENSHELL_REPO/deploy/helm/openshell" -n openshell \
-  --set image.repository=quay.io/rcochran/scratch \
-  --set image.tag=openshell-gateway-dev \
-  --set image.pullPolicy=Always \
-  --set imagePullSecrets[0].name=quay-pull-secret \
-  --set server.sandboxImage="quay.io/rcochran/scratch:openshell-sandbox-base" \
-  --set server.sandboxImagePullPolicy=Always \
-  --set server.grpcEndpoint="https://openshell.openshell.svc.cluster.local:8080" \
-  --set server.dbUrl="sqlite:/var/openshell/openshell.db" \
+HELM_ARGS=(
+  --set server.sandboxImagePullPolicy=Always
+  --set server.dbUrl="sqlite:/var/openshell/openshell.db"
+  --set pkiInitJob.enabled=true
+  --set pkiInitJob.serverDnsNames[0]=openshell.openshell.svc.cluster.local
   --set service.type=ClusterIP
+)
+
+[[ -n "${GATEWAY_IMAGE_REPO:-}" ]] && HELM_ARGS+=(--set image.repository="$GATEWAY_IMAGE_REPO")
+[[ -n "${GATEWAY_IMAGE_TAG:-}" ]]  && HELM_ARGS+=(--set image.tag="$GATEWAY_IMAGE_TAG" --set image.pullPolicy=Always)
+[[ -n "${SUPERVISOR_IMAGE_REPO:-}" ]] && HELM_ARGS+=(--set supervisor.image.repository="$SUPERVISOR_IMAGE_REPO")
+[[ -n "${SANDBOX_IMAGE:-}" ]]      && HELM_ARGS+=(--set server.sandboxImage="$SANDBOX_IMAGE")
+[[ -n "${PULL_SECRET:-}" ]]        && HELM_ARGS+=(--set imagePullSecrets[0].name="$PULL_SECRET")
+
+helm upgrade --install openshell "$OPENSHELL_REPO/deploy/helm/openshell" -n openshell \
+  "${HELM_ARGS[@]}"
 
 echo "=== Waiting for gateway ==="
-kubectl rollout status statefulset/openshell -n openshell --timeout=120s
+kubectl rollout status statefulset/openshell -n openshell --timeout=180s
 
-# ── Step 8: Gateway config ──
-echo "=== Configuring CLI gateway ==="
-mkdir -p "$HOME/.config/openshell/gateways/ocp/mtls"
-cp "$TLSDIR/ca.crt" "$HOME/.config/openshell/gateways/ocp/mtls/"
-cp "$TLSDIR/client.crt" "$HOME/.config/openshell/gateways/ocp/mtls/tls.crt"
-cp "$TLSDIR/client.key" "$HOME/.config/openshell/gateways/ocp/mtls/tls.key"
-cat > "$HOME/.config/openshell/gateways/ocp/metadata.json" <<'GWEOF'
-{"name":"ocp","gateway_endpoint":"https://127.0.0.1:18443","is_remote":false,"gateway_port":18443,"auth_mode":"mtls"}
-GWEOF
+# ── Step 6: Configure local CLI gateway ───────────────────────────────
+echo "=== Step 6: Configuring local CLI gateway ==="
+GW_DIR="$HOME/.config/openshell/gateways/$GATEWAY_NAME"
+MTLS_DIR="$GW_DIR/mtls"
+mkdir -p "$MTLS_DIR"
+
+kubectl get secret openshell-client-tls -n openshell \
+  -o jsonpath='{.data.ca\.crt}' | base64 -d > "$MTLS_DIR/ca.crt"
+kubectl get secret openshell-client-tls -n openshell \
+  -o jsonpath='{.data.tls\.crt}' | base64 -d > "$MTLS_DIR/tls.crt"
+kubectl get secret openshell-client-tls -n openshell \
+  -o jsonpath='{.data.tls\.key}' | base64 -d > "$MTLS_DIR/tls.key"
+
+cat > "$GW_DIR/metadata.json" <<EOF
+{"name":"$GATEWAY_NAME","gateway_endpoint":"https://127.0.0.1:18443","is_remote":false,"gateway_port":18443,"auth_mode":"mtls"}
+EOF
 
 echo ""
 echo "════════════════════════════════════════════════════"
 echo "  OpenShell deployed successfully!"
 echo "════════════════════════════════════════════════════"
 echo ""
-echo "Start port-forward:"
-echo "  kubectl port-forward svc/openshell -n openshell 18443:8080"
+echo "Next steps:"
 echo ""
-echo "Launch a sandbox:"
-echo "  ./ocp-sandbox.sh --name my-agent"
+echo "  1. Start port-forward:"
+echo "     kubectl port-forward svc/openshell -n openshell 18443:8080"
+echo ""
+echo "  2. Register providers (credentials for sandboxes):"
+echo "     ./setup-providers.sh"
+echo ""
+echo "  3. Launch a sandbox:"
+echo "     ./ocp-sandbox.sh --name my-agent"
 echo ""

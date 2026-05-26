@@ -3,6 +3,7 @@
 *.json.key
 acs-ai-sa.json
 kubeconfig
+quay-pull-secret.yaml
 
 # Local state
 *.log

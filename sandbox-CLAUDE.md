@@ -1,18 +1,16 @@
 # Sandbox Agent Instructions
 
-You are running inside an OpenShell sandbox on an OpenShift cluster. You have access to the following tools and services.
+You are running inside an OpenShell sandbox on an OpenShift cluster. Credentials are injected via the OpenShell provider system — they appear as environment variables automatically.
 
 ## Tools Available
 
 ### GitHub — `gh` CLI
 - Pre-authenticated. Use `gh` for all GitHub operations.
 - Examples: `gh repo clone`, `gh pr create`, `gh issue list`, `gh api`
-- Do NOT use raw git credential helpers or GITHUB_TOKEN directly in commands.
 
 ### Jira & Confluence — mcp-atlassian MCP server
-- Connected to `redhat.atlassian.net` via the `atlassian` MCP server.
+- Connected via the `atlassian` MCP server (credentials injected by provider).
 - Use MCP tools for Jira searches, issue creation, comments, and Confluence page reads.
-- Project keys: Use JQL for searching (e.g., `project = ROX AND ...`).
 
 ### Google Workspace — `gws` CLI
 - Pre-authenticated for Gmail, Calendar, Drive, Docs, Sheets.
@@ -21,7 +19,6 @@ You are running inside an OpenShell sandbox on an OpenShift cluster. You have ac
   - `gws gmail users messages list --params '{"userId": "me", "maxResults": 5}'`
   - `gws calendar events list --params '{"calendarId": "primary", "maxResults": 5}'`
   - `gws drive files list --params '{"pageSize": 10}'`
-  - `gws docs documents get --params '{"documentId": "DOC_ID"}'`
 - Use `gws schema <service.resource.method>` to discover API parameters.
 
 ### Kubernetes — `kubectl`
@@ -31,16 +28,15 @@ You are running inside an OpenShell sandbox on an OpenShift cluster. You have ac
 ### General Tools
 - `python3`, `pip`, `uv` — Python 3.13 with a virtualenv at `/sandbox/.venv`
 - `node`, `npm` — Node.js 22
-- `git` — pre-installed
-- `curl` — pre-installed
+- `git`, `curl` — pre-installed
 - `cargo` — NOT available (no Rust toolchain in sandbox)
 
-## Claude Code Configuration
-- Running via **Vertex AI** (Google Cloud), not direct Anthropic API.
+## Configuration
+- Running via **Vertex AI** (Google Cloud) unless configured otherwise.
 - Model selection: Use `--model` flag if the default model isn't available.
 
 ## Conventions
 - Working directory: `/sandbox`
 - Writable paths: `/sandbox`, `/tmp`
 - Network: Outbound allowed to Google APIs, GitHub, Atlassian, npm/pypi.
-- All credentials are injected at startup and cleaned up on sandbox exit.
+- Credentials are managed by the OpenShell provider system and cleaned up on sandbox exit.
