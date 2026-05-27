@@ -79,16 +79,26 @@ fi
 # ── Step 5: Helm install gateway ──────────────────────────────────────
 echo "=== Step 5: Deploying gateway via Helm ==="
 
+# Resolve image tag — the local chart's appVersion is 0.0.0 (dev placeholder),
+# so we default to the latest release tag when no override is provided.
+if [[ -z "${GATEWAY_IMAGE_TAG:-}" ]]; then
+  GATEWAY_IMAGE_TAG=$(gh api repos/NVIDIA/OpenShell/releases/latest --jq '.tag_name' 2>/dev/null | sed 's/^v//' || echo "latest")
+  echo "  Resolved image tag: $GATEWAY_IMAGE_TAG"
+fi
+
 HELM_ARGS=(
   --set server.sandboxImagePullPolicy=Always
   --set server.dbUrl="sqlite:/var/openshell/openshell.db"
   --set pkiInitJob.enabled=true
   --set pkiInitJob.serverDnsNames[0]=openshell.openshell.svc.cluster.local
   --set service.type=ClusterIP
+  --set image.tag="$GATEWAY_IMAGE_TAG"
+  --set image.pullPolicy=Always
+  --set supervisor.image.tag="$GATEWAY_IMAGE_TAG"
+  --set server.auth.allowUnauthenticatedUsers=true
 )
 
 [[ -n "${GATEWAY_IMAGE_REPO:-}" ]] && HELM_ARGS+=(--set image.repository="$GATEWAY_IMAGE_REPO")
-[[ -n "${GATEWAY_IMAGE_TAG:-}" ]]  && HELM_ARGS+=(--set image.tag="$GATEWAY_IMAGE_TAG" --set image.pullPolicy=Always)
 [[ -n "${SUPERVISOR_IMAGE_REPO:-}" ]] && HELM_ARGS+=(--set supervisor.image.repository="$SUPERVISOR_IMAGE_REPO")
 [[ -n "${SANDBOX_IMAGE:-}" ]]      && HELM_ARGS+=(--set server.sandboxImage="$SANDBOX_IMAGE")
 [[ -n "${PULL_SECRET:-}" ]]        && HELM_ARGS+=(--set imagePullSecrets[0].name="$PULL_SECRET")
