@@ -1,6 +1,6 @@
-# Sandbox Harness Setup
+# Sandbox Harness Operations
 
-Tracks everything needed to configure a Claude Code sandbox session on top of any base image. These steps are image-agnostic — they handle credentials, MCP servers, CLI tools, and network policy.
+Tracks credentials, MCP servers, network policy, and the sandbox startup flow.
 
 ## Base Image Assumptions
 
@@ -11,145 +11,149 @@ The harness expects the base image to provide:
 - `gh` CLI
 - `git`, `curl`
 
-The current base image (`ghcr.io/nvidia/openshell-community/sandboxes/base:latest`) satisfies all of these.
+The default base image (`ghcr.io/nvidia/openshell-community/sandboxes/base:latest`) satisfies all of these.
 
-## Credentials (K8s Secrets)
+## Credentials
 
-All credentials are stored as K8s secrets in the `openshell` namespace and uploaded into sandboxes at creation time. They are never baked into images.
+Credentials are managed by the **OpenShell provider system**. They are stored in the gateway database and injected as environment variables into sandbox pods automatically.
 
-| Secret | Contents | Mount Path | Purpose |
-|--------|----------|------------|---------|
-| `gcp-adc` | `adc.json` — Google ADC (authorized_user refresh token) | `/tmp/adc.json` | Vertex AI auth for Claude Code |
-| `atlassian-creds` | `JIRA_URL`, `JIRA_USERNAME`, `JIRA_API_TOKEN` | env vars | mcp-atlassian MCP server |
-| `github-token` | `GITHUB_TOKEN` | env var | `gh` CLI auth |
-| `gws-credentials` | `client_secret.json`, `credentials.enc`, `.encryption_key`, `token_cache.json` | `/tmp/gws-config/` | Google Workspace CLI (`gws`) |
+### Provider-managed credentials (Bearer auth)
 
-### How to revoke
+Provider credentials are injected as placeholder env vars. The sandbox proxy
+resolves them transparently in HTTP `Authorization: Bearer` headers.
 
-- **GCP ADC**: `gcloud auth application-default revoke` (invalidates the refresh token everywhere)
-- **Atlassian API token**: Revoke at https://id.atlassian.com/manage-profile/security/api-tokens
-- **GitHub PAT**: Revoke at https://github.com/settings/tokens
-- **GWS OAuth**: Revoke at https://myaccount.google.com/permissions (find the OAuth app and remove access)
+| Provider | Type | Env Vars | Purpose |
+|----------|------|----------|---------|
+| `github` | github | `GITHUB_TOKEN` | `gh` CLI auth |
+| `anthropic` | anthropic | `ANTHROPIC_API_KEY` | Direct Anthropic API (optional) |
+
+Register via `setup-providers.sh` or manually:
+```shell
+openshell provider create --name github --type github --credential GITHUB_TOKEN="$GITHUB_TOKEN"
+```
+
+### Direct env vars (Basic auth)
+
+Atlassian credentials use Basic auth (`base64(username:token)`), which hides
+placeholders from the proxy resolver. These are passed as literal env vars
+by `ocp-sandbox.sh` from the host environment.
+
+| Env Var | Purpose |
+|---------|---------|
+| `JIRA_URL` | Atlassian site URL |
+| `JIRA_USERNAME` | Atlassian email |
+| `JIRA_API_TOKEN` | Atlassian API token |
+
+### Decomposed file credentials (provider-managed)
+
+GCP ADC credentials are decomposed into individual provider fields so secrets
+never exist as plaintext files in the sandbox. All 7 ADC fields are stored as
+provider credentials by `setup-providers.sh` (requires `jq`).
+
+| Provider | Credentials | Source |
+|----------|------------|--------|
+| `gcp-adc` | `ADC_CLIENT_ID`, `ADC_CLIENT_SECRET`, `ADC_REFRESH_TOKEN`, `ADC_ACCOUNT`, `ADC_QUOTA_PROJECT_ID`, `ADC_TYPE`, `ADC_UNIVERSE_DOMAIN` | `application_default_credentials.json` |
+
+The ADC file (`/tmp/adc.json`) is reconstructed inside the sandbox from these
+env vars. Secret fields contain placeholder tokens; when Google's OAuth library
+sends a token exchange POST to `oauth2.googleapis.com`, the proxy resolves
+them via L7 `request_body_credential_rewrite`.
+
+### File-based credentials (uploaded at sandbox creation)
+
+| File | Upload Path | Purpose |
+|------|-------------|---------|
+| GWS config directory | `/tmp/gws-config/` | Google Workspace CLI |
+
+GWS credentials are encrypted by the `gws` CLI and cannot be decomposed into
+individual fields. They are uploaded via `--upload` in `ocp-sandbox.sh`.
+When OpenShell adds file-based credential projection (issues #1268, #1423),
+GWS files can move to the provider system.
 
 ### How to rotate
 
 ```shell
-export KUBECONFIG=$PWD/kubeconfig
+# Provider credentials — update in-place
+openshell provider update github --credential GITHUB_TOKEN="ghp_new_token"
 
-# GCP ADC
+# Atlassian — update env vars and launch a new sandbox
+export JIRA_API_TOKEN="new_token"
+
+# GCP ADC — re-authenticate and launch a new sandbox
 gcloud auth application-default login
-kubectl delete secret gcp-adc -n openshell
-kubectl create secret generic gcp-adc -n openshell \
-  --from-file=adc.json=$HOME/.config/gcloud/application_default_credentials.json
 
-# Atlassian
-kubectl delete secret atlassian-creds -n openshell
-kubectl create secret generic atlassian-creds -n openshell \
-  --from-literal=JIRA_URL=https://redhat.atlassian.net \
-  --from-literal=JIRA_USERNAME=<email> \
-  --from-literal=JIRA_API_TOKEN=<new-token>
-
-# GitHub
-kubectl delete secret github-token -n openshell
-kubectl create secret generic github-token -n openshell \
-  --from-literal=GITHUB_TOKEN=<new-pat>
-
-# GWS (re-auth locally first: gws auth login)
-kubectl delete secret gws-credentials -n openshell
-kubectl create secret generic gws-credentials -n openshell \
-  --from-file=client_secret.json=$HOME/.config/gws/client_secret.json \
-  --from-file=credentials.enc=$HOME/.config/gws/credentials.enc \
-  --from-file=encryption_key=$HOME/.config/gws/.encryption_key \
-  --from-file=token_cache.json=$HOME/.config/gws/token_cache.json
+# GWS OAuth — re-authenticate locally
+gws auth login
+# New sandboxes will pick up the updated files from $GWS_CONFIG_DIR
 ```
 
-## Environment Variables
+### How to revoke
 
-Set directly in the sandbox command (not via the provider system, which wraps values in proxy placeholders).
+- **GCP ADC**: `gcloud auth application-default revoke`
+- **Atlassian API token**: https://id.atlassian.com/manage-profile/security/api-tokens
+- **GitHub PAT**: https://github.com/settings/tokens
+- **GWS OAuth**: https://myaccount.google.com/permissions
+
+## Environment Variables
 
 ### Vertex AI (Claude Code)
 ```shell
 GOOGLE_APPLICATION_CREDENTIALS=/tmp/adc.json
 CLAUDE_CODE_USE_VERTEX=1
 CLOUD_ML_REGION=global
-ANTHROPIC_VERTEX_PROJECT_ID=itpc-gcp-hcm-pe-eng-claude
-GOOGLE_CLOUD_LOCATION=us-east5
-GOOGLE_CLOUD_PROJECT=itpc-gcp-hcm-pe-eng-claude
+ANTHROPIC_VERTEX_PROJECT_ID=<project-id>
+GOOGLE_CLOUD_LOCATION=<region>
+GOOGLE_CLOUD_PROJECT=<project-id>
 ```
 
-### Atlassian (mcp-atlassian)
-```shell
-JIRA_URL=https://redhat.atlassian.net
-JIRA_USERNAME=<email>
-JIRA_API_TOKEN=<token>
-```
-
-### GitHub (gh CLI)
-```shell
-GITHUB_TOKEN=<pat>
-```
+Set via `VERTEX_PROJECT` and `VERTEX_REGION` environment variables before running `ocp-sandbox.sh`.
 
 ## MCP Servers
 
-Installed at sandbox startup via `uv`. Configured via Claude Code's settings file.
+Installed at sandbox startup via `pip`. Configured via Claude Code's config file.
 
 ### mcp-atlassian
 - **Source**: https://github.com/sooperset/mcp-atlassian
-- **Install**: `uv pip install mcp-atlassian`
-- **Config**: Written to `~/.claude/settings.json` at startup
-- **Env vars**: `JIRA_URL`, `JIRA_USERNAME`, `JIRA_API_TOKEN`
+- **Install**: `pip install mcp-atlassian`
+- **Config**: Written to `~/.claude.json` at startup
+- **Env vars**: Injected by the `atlassian` provider
 
 ### gws (Google Workspace CLI)
 - **Source**: https://github.com/googleworkspace/cli
-- **Install**: `npm install -g @googleworkspace/cli`
-- **Config**: `GOOGLE_WORKSPACE_CLI_CONFIG_DIR=/tmp/gws-config` (files uploaded from K8s secret)
-- **Auth**: Uses pre-authenticated OAuth credentials (encrypted at rest in the secret)
-- **Capabilities**: Gmail, Calendar, Drive, Docs, Sheets, Chat, Admin — 100+ API methods
-
-### Future MCP servers
-Add entries here as we add more. The pattern is:
-1. Add the package to the startup install command
-2. Add the MCP server config to the settings.json template
-3. Add required env vars to the credentials section
-4. Add required network endpoints to the policy
+- **Install**: Downloaded from GitHub releases
+- **Config**: `GOOGLE_WORKSPACE_CLI_CONFIG_DIR=/tmp/gws-config`
+- **Auth**: Uses pre-authenticated OAuth credentials uploaded from local machine
 
 ## Network Policy
 
-File: `architecture/plans/vertex-policy.yaml`
-
-Current allowed endpoints:
+File: `vertex-policy.yaml`
 
 | Pattern | Purpose |
 |---------|---------|
 | `*.googleapis.com:443` | Vertex AI, GCP auth |
 | `*.google.com:443` | Google OAuth |
-| `*.anthropic.com:443` | Claude telemetry (statsig) |
-| `github.com:443`, `*.github.com:443`, `*.githubusercontent.com:443` | GitHub API, repos |
+| `*.anthropic.com:443` | Claude telemetry |
+| `github.com:443`, `*.github.com:443` | GitHub API, repos |
+| `*.atlassian.net:443`, `*.atl-paas.net:443` | Jira/Confluence |
 | `registry.npmjs.org:443` | npm packages |
 | `pypi.org:443`, `*.pythonhosted.org:443` | Python packages |
-| `*.atlassian.net:443` | Jira/Confluence |
-| `*.atl-paas.net:443` | Atlassian CDN/auth |
 
-## Startup Script
+### L7 Configuration
 
-The sandbox startup script (`ocp-sandbox.sh`) does:
-1. Ensures port-forward is running
-2. Ensures gateway config exists
-3. Uploads ADC file
-4. Sets all env vars
-5. Installs MCP servers via `uv`
-6. Writes Claude Code MCP config
-7. Launches Claude Code (or shell)
+The `google_apis` policy has L7 `request_body_credential_rewrite` enabled.
+This is required because GCP OAuth token exchange sends `client_secret` and
+`refresh_token` as form-encoded POST body parameters to `oauth2.googleapis.com`.
+Without L7 body rewrite, the proxy can't resolve placeholder tokens in POST
+bodies — only in headers and URL paths.
 
-## Custom Image Strategy (Future)
+## Custom Image Strategy
 
-When building platform-specific images, the harness separates cleanly:
+The harness separates cleanly into image and configuration layers:
 
-- **Image layer**: Base OS, runtimes (node, python, rust), CLI tools (gh, git, claude)
-- **Harness layer** (this doc): Credentials, MCP servers, env vars, network policy
+- **Image layer**: Base OS, runtimes, CLI tools
+- **Harness layer**: Providers, MCP servers, env vars, network policy
 
-The harness works on any image that meets the base assumptions above. To support a different platform:
+To use a different base image:
 1. Build an image with the required tools
-2. Push to quay.io with a new tag (e.g., `scratch:openshell-sandbox-rust`)
-3. Use `--from <image>` or update `server.sandboxImage` in the Helm values
-4. The harness script works unchanged
+2. Set `SANDBOX_IMAGE` before running `deploy.sh`, or use `--from <image>` on sandbox create
+3. The harness scripts work unchanged
