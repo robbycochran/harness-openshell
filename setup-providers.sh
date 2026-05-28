@@ -8,13 +8,18 @@
 #
 # Usage:
 #   export GITHUB_TOKEN="ghp_..."
-#   export JIRA_URL="https://mysite.atlassian.net"
-#   export JIRA_USERNAME="user@example.com"
-#   export JIRA_API_TOKEN="ATATT..."
 #   export ANTHROPIC_API_KEY="sk-ant-..."        # if using Anthropic directly
 #   ./setup-providers.sh
 #
-# For Vertex AI: no env var needed here — ADC file is uploaded at sandbox creation time.
+# Note: Atlassian credentials (JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN)
+# are NOT registered as providers. They are passed as literal env vars
+# by ocp-sandbox.sh because mcp-atlassian uses Basic auth, which
+# base64-encodes the credentials — hiding the placeholder tokens from
+# the proxy's credential resolver.
+#
+# For Vertex AI: All ADC fields are extracted from the local ADC file
+# and registered as the gcp-adc provider. The sandbox reconstructs
+# adc.json from provider env vars. Requires jq.
 #
 # To update credentials later, re-run this script or use:
 #   openshell provider update <name> --credential KEY=NEW_VALUE
@@ -47,18 +52,18 @@ register_provider() {
   if "$CLI" provider get "$name" &>/dev/null 2>&1; then
     echo "  ↻ $name — already exists, updating credentials"
     if "$CLI" provider update "$name" "${cred_args[@]}" 2>/dev/null; then
-      ((created++))
+      ((created++)) || true
     else
       echo "  ✗ $name — update failed"
-      ((failed++))
+      ((failed++)) || true
     fi
   else
     if "$CLI" provider create --name "$name" --type "$type" "${cred_args[@]}" 2>/dev/null; then
       echo "  ✓ $name — registered"
-      ((created++))
+      ((created++)) || true
     else
       echo "  ✗ $name — creation failed"
-      ((failed++))
+      ((failed++)) || true
     fi
   fi
 }
@@ -67,39 +72,71 @@ echo "Registering providers with gateway '$GATEWAY_NAME'..."
 echo ""
 
 # ── GitHub ─────────────────────────────────────────────────────────────
+# Token is injected as a placeholder env var. The sandbox proxy resolves
+# it transparently in Authorization headers (Bearer auth).
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then
   register_provider github github \
     --credential "GITHUB_TOKEN=$GITHUB_TOKEN"
 else
   echo "  – github — skipped (GITHUB_TOKEN not set)"
-  ((skipped++))
-fi
-
-# ── Atlassian (Jira + Confluence) ─────────────────────────────────────
-if [[ -n "${JIRA_URL:-}" && -n "${JIRA_USERNAME:-}" && -n "${JIRA_API_TOKEN:-}" ]]; then
-  register_provider atlassian generic \
-    --credential "JIRA_URL=$JIRA_URL" \
-    --credential "JIRA_USERNAME=$JIRA_USERNAME" \
-    --credential "JIRA_API_TOKEN=$JIRA_API_TOKEN"
-else
-  echo "  – atlassian — skipped (JIRA_URL, JIRA_USERNAME, or JIRA_API_TOKEN not set)"
-  ((skipped++))
+  ((skipped++)) || true
 fi
 
 # ── Anthropic (direct API) ────────────────────────────────────────────
+# Same Bearer auth pattern — proxy resolves the placeholder in headers.
 if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
   register_provider anthropic anthropic \
     --credential "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
 else
   echo "  – anthropic — skipped (ANTHROPIC_API_KEY not set)"
-  ((skipped++))
+  ((skipped++)) || true
+fi
+
+# ── GCP ADC (Vertex AI) ──────────────────────────────────────────────
+# Only the two secret fields (client_secret, refresh_token) are stored
+# as provider credentials. These flow through HTTP during OAuth token
+# exchange, where the proxy resolves placeholders via L7 body rewrite.
+#
+# Non-secret fields (client_id, account, type, etc.) are read locally
+# from the ADC file by Google's auth library — placeholders wouldn't
+# work there. ocp-sandbox.sh reads those from the ADC file at launch
+# time and injects them as literal env vars.
+ADC_FILE="${GOOGLE_APPLICATION_CREDENTIALS:-$HOME/.config/gcloud/application_default_credentials.json}"
+if [[ -f "$ADC_FILE" ]]; then
+  if ! command -v jq &>/dev/null; then
+    echo "  ✗ gcp-adc — jq required to extract ADC secrets"
+    ((failed++)) || true
+  else
+    ADC_CLIENT_SECRET=$(jq -r '.client_secret // empty' "$ADC_FILE")
+    ADC_REFRESH_TOKEN=$(jq -r '.refresh_token // empty' "$ADC_FILE")
+    if [[ -n "$ADC_CLIENT_SECRET" && -n "$ADC_REFRESH_TOKEN" ]]; then
+      register_provider gcp-adc generic \
+        --credential "ADC_CLIENT_SECRET=$ADC_CLIENT_SECRET" \
+        --credential "ADC_REFRESH_TOKEN=$ADC_REFRESH_TOKEN"
+    else
+      echo "  – gcp-adc — skipped (ADC file missing client_secret or refresh_token)"
+      ((skipped++)) || true
+    fi
+  fi
+else
+  echo "  – gcp-adc — skipped (no ADC file at $ADC_FILE)"
+  ((skipped++)) || true
 fi
 
 echo ""
 echo "Done: $created registered, $skipped skipped, $failed failed."
 echo ""
-echo "Verify with:"
+echo "Note: Atlassian credentials are passed directly by ocp-sandbox.sh"
+echo "(Basic auth — placeholders can't be used). Set JIRA_URL,"
+echo "JIRA_USERNAME, JIRA_API_TOKEN in your environment before running"
+echo "ocp-sandbox.sh."
+echo ""
+echo "Note: mcp-atlassian also supports OAuth Bearer auth via"
+echo "ATLASSIAN_OAUTH_ACCESS_TOKEN + ATLASSIAN_OAUTH_CLOUD_ID, which"
+echo "would work with provider placeholders. However, OAuth access tokens"
+echo "expire (~1 hour) and OpenShell doesn't yet support token refresh."
+echo ""
+echo "Verify providers with:"
 echo "  openshell provider list"
 echo ""
-echo "Providers are attached to sandboxes with --provider flags:"
-echo "  openshell sandbox create --provider github --provider atlassian ..."
+echo "Providers are attached to sandboxes automatically by ocp-sandbox.sh."

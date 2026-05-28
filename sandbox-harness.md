@@ -17,12 +17,14 @@ The default base image (`ghcr.io/nvidia/openshell-community/sandboxes/base:lates
 
 Credentials are managed by the **OpenShell provider system**. They are stored in the gateway database and injected as environment variables into sandbox pods automatically.
 
-### Provider-managed credentials
+### Provider-managed credentials (Bearer auth)
+
+Provider credentials are injected as placeholder env vars. The sandbox proxy
+resolves them transparently in HTTP `Authorization: Bearer` headers.
 
 | Provider | Type | Env Vars | Purpose |
 |----------|------|----------|---------|
 | `github` | github | `GITHUB_TOKEN` | `gh` CLI auth |
-| `atlassian` | generic | `JIRA_URL`, `JIRA_USERNAME`, `JIRA_API_TOKEN` | mcp-atlassian MCP server |
 | `anthropic` | anthropic | `ANTHROPIC_API_KEY` | Direct Anthropic API (optional) |
 
 Register via `setup-providers.sh` or manually:
@@ -30,22 +32,52 @@ Register via `setup-providers.sh` or manually:
 openshell provider create --name github --type github --credential GITHUB_TOKEN="$GITHUB_TOKEN"
 ```
 
+### Direct env vars (Basic auth)
+
+Atlassian credentials use Basic auth (`base64(username:token)`), which hides
+placeholders from the proxy resolver. These are passed as literal env vars
+by `ocp-sandbox.sh` from the host environment.
+
+| Env Var | Purpose |
+|---------|---------|
+| `JIRA_URL` | Atlassian site URL |
+| `JIRA_USERNAME` | Atlassian email |
+| `JIRA_API_TOKEN` | Atlassian API token |
+
+### Decomposed file credentials (provider-managed)
+
+GCP ADC credentials are decomposed into individual provider fields so secrets
+never exist as plaintext files in the sandbox. All 7 ADC fields are stored as
+provider credentials by `setup-providers.sh` (requires `jq`).
+
+| Provider | Credentials | Source |
+|----------|------------|--------|
+| `gcp-adc` | `ADC_CLIENT_ID`, `ADC_CLIENT_SECRET`, `ADC_REFRESH_TOKEN`, `ADC_ACCOUNT`, `ADC_QUOTA_PROJECT_ID`, `ADC_TYPE`, `ADC_UNIVERSE_DOMAIN` | `application_default_credentials.json` |
+
+The ADC file (`/tmp/adc.json`) is reconstructed inside the sandbox from these
+env vars. Secret fields contain placeholder tokens; when Google's OAuth library
+sends a token exchange POST to `oauth2.googleapis.com`, the proxy resolves
+them via L7 `request_body_credential_rewrite`.
+
 ### File-based credentials (uploaded at sandbox creation)
 
 | File | Upload Path | Purpose |
 |------|-------------|---------|
-| GCP ADC (`application_default_credentials.json`) | `/tmp/adc.json` | Vertex AI auth |
 | GWS config directory | `/tmp/gws-config/` | Google Workspace CLI |
 
-These are uploaded via `--upload` flags in `ocp-sandbox.sh`.
+GWS credentials are encrypted by the `gws` CLI and cannot be decomposed into
+individual fields. They are uploaded via `--upload` in `ocp-sandbox.sh`.
+When OpenShell adds file-based credential projection (issues #1268, #1423),
+GWS files can move to the provider system.
 
 ### How to rotate
 
 ```shell
 # Provider credentials — update in-place
 openshell provider update github --credential GITHUB_TOKEN="ghp_new_token"
-openshell provider update atlassian \
-  --credential JIRA_API_TOKEN="new_token"
+
+# Atlassian — update env vars and launch a new sandbox
+export JIRA_API_TOKEN="new_token"
 
 # GCP ADC — re-authenticate and launch a new sandbox
 gcloud auth application-default login
@@ -105,6 +137,14 @@ File: `vertex-policy.yaml`
 | `*.atlassian.net:443`, `*.atl-paas.net:443` | Jira/Confluence |
 | `registry.npmjs.org:443` | npm packages |
 | `pypi.org:443`, `*.pythonhosted.org:443` | Python packages |
+
+### L7 Configuration
+
+The `google_apis` policy has L7 `request_body_credential_rewrite` enabled.
+This is required because GCP OAuth token exchange sends `client_secret` and
+`refresh_token` as form-encoded POST body parameters to `oauth2.googleapis.com`.
+Without L7 body rewrite, the proxy can't resolve placeholder tokens in POST
+bodies — only in headers and URL paths.
 
 ## Custom Image Strategy
 

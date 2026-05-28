@@ -30,14 +30,16 @@ A deployment harness for running AI agent sandboxes on OpenShift using [OpenShel
 # 2. Start port-forward to the gateway
 kubectl port-forward svc/openshell -n openshell 18443:8080
 
-# 3. Register your credentials as providers
+# 3. Register provider credentials (GitHub, Anthropic, GCP ADC)
 export GITHUB_TOKEN="ghp_..."
-export JIRA_URL="https://mysite.atlassian.net"
-export JIRA_USERNAME="user@example.com"
-export JIRA_API_TOKEN="ATATT..."
+# ADC secrets are auto-extracted from your local ADC file by setup-providers.sh
 ./setup-providers.sh
 
 # 4. Launch an interactive Claude sandbox
+#    Atlassian creds are passed directly (not via provider)
+export JIRA_URL="https://mysite.atlassian.net"
+export JIRA_USERNAME="user@example.com"
+export JIRA_API_TOKEN="ATATT..."
 ./ocp-sandbox.sh --name my-agent
 ```
 
@@ -49,39 +51,24 @@ export JIRA_API_TOKEN="ATATT..."
 | `setup-providers.sh` | Register credentials with the OpenShell provider system |
 | `ocp-sandbox.sh` | Launch/rejoin Claude sandboxes with all integrations |
 | `vertex-policy.yaml` | Network policy for sandbox egress |
+| `credentials.md` | Credential flows, mechanisms, and rotation guide |
 | `sandbox-CLAUDE.md` | Agent instructions injected into sandboxes |
 | `verify-integrations.py` | Integration test script for all tools |
 | `future-ideas.md` | Roadmap (observability, CronJobs, web UI, memory) |
 
-## How Credentials Work
+## Credentials
 
-This harness uses the **OpenShell provider system** instead of raw K8s secrets. Credentials are:
+See [credentials.md](credentials.md) for the full credential reference — how each credential is stored, transported, and consumed in sandboxes.
 
-1. Registered once via `setup-providers.sh` (stored in the gateway database)
-2. Automatically injected as environment variables into sandbox pods
-3. Attached to sandboxes with `--provider` flags
+**Quick summary:**
 
-| Provider | Type | Env Vars Injected |
-|----------|------|-------------------|
-| `github` | github | `GITHUB_TOKEN` |
-| `atlassian` | generic | `JIRA_URL`, `JIRA_USERNAME`, `JIRA_API_TOKEN` |
-| `anthropic` | anthropic | `ANTHROPIC_API_KEY` |
-
-File-based credentials (GCP ADC, GWS OAuth) are uploaded at sandbox creation time via `--upload`.
-
-### Updating Credentials
-
-```shell
-# Update a single credential
-openshell provider update github --credential GITHUB_TOKEN="ghp_new_token"
-
-# Re-discover from environment
-export GITHUB_TOKEN="ghp_new_token"
-openshell provider update github --from-existing
-
-# Or re-run the setup script
-./setup-providers.sh
-```
+| Credential | Mechanism | Setup |
+|------------|-----------|-------|
+| GitHub | Provider (Bearer auth) | `setup-providers.sh` |
+| GCP ADC | Provider (decomposed, L7 body rewrite) | `setup-providers.sh` |
+| Anthropic | Provider (Bearer auth) | `setup-providers.sh` (optional, not needed for Vertex) |
+| Atlassian | Literal env vars (Basic auth) | Set `JIRA_URL`, `JIRA_USERNAME`, `JIRA_API_TOKEN` before `ocp-sandbox.sh` |
+| Google Workspace | File upload | Pre-authenticate with `gws auth login` |
 
 ## Sandbox Usage
 

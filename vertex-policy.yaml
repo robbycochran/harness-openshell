@@ -15,12 +15,36 @@ process:
 # Testing policy — wildcard binaries on all endpoints.
 # Tighten binary paths before production.
 network_policies:
+  google_oauth:
+    name: google-oauth
+    endpoints:
+      - host: oauth2.googleapis.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: full
+        request_body_credential_rewrite: true
+      - host: "*.google.com"
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        access: full
+        request_body_credential_rewrite: true
+    binaries:
+      - { path: "/**" }
+
   google_apis:
     name: google-apis
     endpoints:
       - host: "*.googleapis.com"
         port: 443
-      - host: "*.google.com"
+    binaries:
+      - { path: "/**" }
+
+  claude_downloads:
+    name: claude-downloads
+    endpoints:
+      - host: downloads.claude.ai
         port: 443
     binaries:
       - { path: "/**" }
