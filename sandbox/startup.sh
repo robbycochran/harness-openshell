@@ -7,15 +7,20 @@
 #
 # ── What the provider system handles (no work needed here) ─────────────
 #
-#   GITHUB_TOKEN                → github provider, Bearer auth
-#   GOOGLE_VERTEX_AI_TOKEN      → vertex-local provider, gateway-minted
-#   ANTHROPIC_VERTEX_PROJECT_ID → vertex-local provider config
-#   VERTEX_LOCATION             → vertex-local provider config
-#   JIRA_URL                    → atlassian provider, Basic auth (proxy
-#   JIRA_USERNAME                 decodes base64, resolves placeholders,
-#   JIRA_API_TOKEN                re-encodes)
+#   GITHUB_TOKEN           → github provider, Bearer auth
+#   GOOGLE_VERTEX_AI_TOKEN → vertex-local provider, gateway-minted OAuth token
+#   JIRA_API_TOKEN         → atlassian provider, Basic auth (proxy decodes
+#                            base64, resolves placeholder, re-encodes)
+#
+# Inference routing: Claude Code sends requests to https://inference.local.
+# The gateway proxies to Vertex AI using the vertex-local provider credentials.
+# No Anthropic API key is needed — ANTHROPIC_API_KEY is a dummy value.
 #
 set -euo pipefail
+
+# ── Ensure GWS config dir exists ───────────────────────────────────────
+mkdir -p /tmp/gws-config
+chmod 700 /tmp/gws-config
 
 # ── Environment file (persists across reconnects) ──────────────────────
 cat > /sandbox/.openshell-env <<'ENVEOF'

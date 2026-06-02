@@ -101,17 +101,17 @@ openshell provider create --name vertex-local --type google-vertex-ai \
 
 ### Atlassian (`atlassian` provider)
 
-Atlassian credentials use **Basic auth**: `Authorization: Basic base64("username:token")`.
-The OpenShell proxy supports Basic auth resolution — it decodes the base64
-value, finds placeholder tokens inside, resolves them to real values, and
-re-encodes. This means all three Atlassian credentials are provider-managed.
+Atlassian uses a split credential model:
+
+- **`JIRA_API_TOKEN`** — provider-managed. The OpenShell proxy resolves it in Basic auth headers: it decodes `base64("username:token")`, replaces the token placeholder with the real value, and re-encodes.
+- **`JIRA_URL` and `JIRA_USERNAME`** — not secrets, uploaded as plain JSON by `sandbox.sh`. Read from `atlassian.json` by `configure-mcp.py` and set as literal values in the MCP config.
 
 | | |
 |---|---|
 | **Source** | `JIRA_URL`, `JIRA_USERNAME`, `JIRA_API_TOKEN` env vars on host |
-| **Registration** | `./setup-providers.sh` imports `sandbox/profiles/atlassian.yaml` and creates the provider |
-| **Sandbox delivery** | Provider placeholders in env |
-| **Consumption** | mcp-atlassian constructs `Basic base64(placeholder:placeholder)` → proxy decodes, resolves, re-encodes |
+| **Registration** | `setup-providers.sh` registers only `JIRA_API_TOKEN`; URL/username uploaded at sandbox launch |
+| **Sandbox delivery** | Token as provider placeholder; URL/username as literals in `.claude.json` |
+| **Consumption** | mcp-atlassian constructs Basic auth → proxy resolves token placeholder |
 | **Access control** | Read-only via `READ_ONLY_MODE=true` in mcp-atlassian config |
 
 ### Google Workspace (file upload)

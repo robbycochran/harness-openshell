@@ -51,7 +51,12 @@ echo -n "  Gateway ($OPENSHELL_GATEWAY): "
 
 echo -n "  Inference route: "
 model=$("$CLI" inference get 2>/dev/null | grep Model: | awk '{print $2}')
-[[ -n "$model" ]] && echo "$model" || echo "NOT SET — run ./setup-providers.sh"
+if [[ -n "$model" ]]; then
+  echo "$model"
+else
+  echo "NOT SET — run ./setup-providers.sh"
+  exit 1
+fi
 
 # Clean up any previous failed sandbox with the same name
 if [[ -n "$NAME" ]] && "$CLI" sandbox list 2>/dev/null | awk 'NR>1 {print $1}' | grep -qFx "$NAME"; then
@@ -80,27 +85,35 @@ CREDS="$STAGE/creds"
 mkdir -p "$CREDS"
 HAS_UPLOADS=false
 
-# Atlassian: write non-secret config (URL and username aren't secrets,
-# only JIRA_API_TOKEN needs provider placeholder resolution)
+# Atlassian: write non-secret config as JSON (URL and username aren't secrets;
+# only JIRA_API_TOKEN needs provider placeholder resolution).
+# Using python3 to avoid JSON injection from special chars in values.
 if [[ -n "${JIRA_URL:-}" ]]; then
-  cat > "$CREDS/atlassian.json" <<EOF
-{"jira_url": "${JIRA_URL}", "jira_username": "${JIRA_USERNAME:-}"}
-EOF
+  python3 -c "
+import json, sys
+with open(sys.argv[1], 'w') as f:
+    json.dump({'jira_url': sys.argv[2], 'jira_username': sys.argv[3]}, f)
+" "$CREDS/atlassian.json" "$JIRA_URL" "${JIRA_USERNAME:-}"
   echo "  Atlassian config: $JIRA_URL"
   HAS_UPLOADS=true
 fi
 
-# GWS: export decrypted credentials (encrypted files are machine-specific)
+# GWS: export decrypted credentials (encrypted files are machine-specific
+# and cannot be decrypted on a different machine).
 if command -v gws &>/dev/null && gws auth status &>/dev/null; then
   mkdir -p "$CREDS/gws-config"
-  gws auth export --unmasked > "$CREDS/gws-config/credentials.json" 2>/dev/null
-  GWS_DIR="${GWS_CONFIG_DIR:-$HOME/.config/gws}"
-  [[ -f "$GWS_DIR/client_secret.json" ]] && cp "$GWS_DIR/client_secret.json" "$CREDS/gws-config/"
-  chmod 600 "$CREDS/gws-config"/*
-  echo "  GWS credentials: exported"
-  HAS_UPLOADS=true
+  if gws auth export --unmasked > "$CREDS/gws-config/credentials.json" 2>/dev/null; then
+    GWS_DIR="${GWS_CONFIG_DIR:-$HOME/.config/gws}"
+    [[ -f "$GWS_DIR/client_secret.json" ]] && cp "$GWS_DIR/client_secret.json" "$CREDS/gws-config/"
+    chmod 600 "$CREDS/gws-config"/*
+    echo "  GWS credentials: exported"
+    HAS_UPLOADS=true
+  else
+    echo "  GWS: export failed (sandbox will launch without GWS)"
+    rm -rf "$CREDS/gws-config"
+  fi
 else
-  echo "  GWS: not authenticated (skipping)"
+  echo "  GWS: not authenticated (skipping — run 'gws auth login' first)"
 fi
 
 UPLOAD_ARGS=()

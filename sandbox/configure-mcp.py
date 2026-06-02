@@ -29,10 +29,14 @@ config = {
 # ── Atlassian (sooperset/mcp-atlassian) ────────────────────────────────
 atlassian_config = "/sandbox/.harness/creds/atlassian.json"
 if os.path.isfile(atlassian_config):
-    with open(atlassian_config) as f:
-        atlassian = json.load(f)
-    jira_url = atlassian.get("jira_url", "")
-    jira_username = atlassian.get("jira_username", "")
+    try:
+        with open(atlassian_config) as f:
+            atlassian = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"WARNING: could not read atlassian config: {e}", flush=True)
+        atlassian = {}
+    jira_url = atlassian.get("jira_url", "") if atlassian else ""
+    jira_username = atlassian.get("jira_username", "") if atlassian else ""
     jira_api_token = os.environ.get("JIRA_API_TOKEN", "")
 
     config["mcpServers"]["atlassian"] = {

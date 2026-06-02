@@ -19,6 +19,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
+# ── Dependency checks ──────────────────────────────────────────────────
+for cmd in kubectl helm base64; do
+  command -v "$cmd" &>/dev/null || { echo "ERROR: $cmd is required but not found."; exit 1; }
+done
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     --kubeconfig) export KUBECONFIG="$2"; shift 2 ;;
@@ -104,6 +109,10 @@ HELM_ARGS=(
   --set image.tag="$GATEWAY_IMAGE_TAG"
   --set image.pullPolicy=Always
   --set supervisor.image.tag="$SUPERVISOR_IMAGE_TAG"
+  # allowUnauthenticatedUsers: the gateway is not open to the internet — it is
+  # only accessible via the OpenShift route with mTLS passthrough. The client
+  # cert (in ~/.config/openshell/gateways/ocp/mtls/) is the authentication gate.
+  # To add OIDC on top of mTLS, configure --oidc-issuer in the gateway config.
   --set server.auth.allowUnauthenticatedUsers=true
 )
 
@@ -115,8 +124,12 @@ HELM_ARGS+=(--set supervisor.image.repository="$SUPERVISOR_IMAGE_REPO")
 helm upgrade --install openshell "$OPENSHELL_REPO/deploy/helm/openshell" -n openshell \
   "${HELM_ARGS[@]}"
 
+echo "=== Waiting for PKI init job ==="
+kubectl wait job -n openshell -l app.kubernetes.io/component=certgen \
+  --for=condition=complete --timeout=120s 2>/dev/null || true
+
 echo "=== Waiting for gateway ==="
-kubectl rollout status statefulset/openshell -n openshell --timeout=180s
+kubectl rollout status statefulset/openshell -n openshell --timeout=300s
 
 # ── Step 5: OpenShift Route (TLS passthrough) ─────────────────────────
 # mTLS is preserved end-to-end: the route forwards encrypted traffic

@@ -88,11 +88,13 @@ if [[ -f "$ADC" ]]; then
         --from-gcloud-adc \
         --config "VERTEX_AI_PROJECT_ID=${VERTEX_PROJECT}" \
         --config "VERTEX_AI_REGION=${VERTEX_REGION}"
-      "$CLI" inference set --provider vertex-local --model "$MODEL" --no-verify
-      echo "  vertex-local — registered (project: $VERTEX_PROJECT, model: $MODEL)"
+      echo "  vertex-local — registered (project: $VERTEX_PROJECT)"
     else
       echo "  vertex-local — exists (use --force to recreate)"
     fi
+    # Always ensure inference route is set to the configured model
+    "$CLI" inference set --provider vertex-local --model "$MODEL" --no-verify
+    echo "  inference — model: $MODEL"
   else
     echo "  vertex-local — skipped (VERTEX_PROJECT not set and not in ADC)"
   fi

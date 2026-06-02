@@ -9,6 +9,14 @@ GATEWAY_NAME="${GATEWAY_NAME:-ocp}"
 export OPENSHELL_GATEWAY="$GATEWAY_NAME"
 CLI="${OPENSHELL_CLI:-openshell}"
 
+for cmd in kubectl helm; do
+  command -v "$cmd" &>/dev/null || { echo "ERROR: $cmd is required but not found."; exit 1; }
+done
+
+echo "WARNING: This will delete all sandboxes, providers, and cluster resources."
+read -r -p "Continue? [y/N] " confirm
+[[ "$confirm" =~ ^[yY]$ ]] || { echo "Aborted."; exit 0; }
+
 echo "=== Deleting sandboxes ==="
 if command -v "$CLI" &>/dev/null && "$CLI" gateway info "$GATEWAY_NAME" &>/dev/null; then
   "$CLI" sandbox list 2>/dev/null | awk 'NR>1 {print $1}' | while read -r name; do
