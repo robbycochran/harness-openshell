@@ -1,154 +1,53 @@
 #!/usr/bin/env bash
-# Convenience wrapper: generate and apply a sandbox Job YAML.
-#
-# Equivalent to editing sandbox.yaml and running kubectl apply.
-# All credentials come from K8s Secrets — no env vars needed at launch.
+# Launch an OpenShell sandbox by applying a sandbox YAML file.
 #
 # Prerequisites (one-time):
-#   ./deploy-ocp.sh          # deploys gateway + launcher RBAC
-#   ./setup-creds.sh         # stores GWS + Atlassian config in cluster
-#   ./setup-providers.sh     # registers API tokens with gateway
+#   ./deploy-ocp.sh
+#   ./setup-creds.sh
+#   ./setup-providers.sh
 #
 # Usage:
-#   ./sandbox.sh                        # launch with defaults
-#   ./sandbox.sh --name my-sandbox      # custom sandbox name
-#   ./sandbox.sh --no-keep              # delete sandbox after exit
-#   ./sandbox.sh --rejoin my-sandbox    # reconnect to existing sandbox
-#   ./sandbox.sh --providers "github vertex-local"  # override providers
+#   ./sandbox.sh                          # apply sandbox.yaml
+#   ./sandbox.sh my-sandbox.yaml          # apply a custom sandbox file
+#   ./sandbox.sh --rejoin agent           # reconnect to existing sandbox
 #
-# Or skip this wrapper entirely:
-#   kubectl apply -f sandbox.yaml
+# Edit sandbox.yaml to configure name, providers, skills, etc.
 set -euo pipefail
 
-NAMESPACE="${OPENSHELL_NAMESPACE:-openshell}"
 export OPENSHELL_GATEWAY="${GATEWAY_NAME:-ocp}"
+NAMESPACE="${OPENSHELL_NAMESPACE:-openshell}"
 
 CLI="${OPENSHELL_CLI:-openshell}"
 command -v "$CLI" &>/dev/null || { echo "ERROR: openshell CLI not found."; exit 1; }
 command -v kubectl &>/dev/null || { echo "ERROR: kubectl is required."; exit 1; }
 
-# ── Parse args ─────────────────────────────────────────────────────────
-NAME="agent"
-KEEP="true"
-REJOIN=""
-PROVIDERS="github vertex-local atlassian"
-while [[ $# -gt 0 ]]; do
-  case $1 in
-    --rejoin)    REJOIN="$2"; shift 2 ;;
-    --name)      NAME="$2"; shift 2 ;;
-    --no-keep)   KEEP="false"; shift ;;
-    --providers) PROVIDERS="$2"; shift 2 ;;
-    *) echo "Unknown argument: $1"; exit 1 ;;
-  esac
-done
+case "${1:-}" in
+  --rejoin)
+    echo "Reconnecting to sandbox: $2"
+    exec "$CLI" sandbox connect "$2"
+    ;;
+  *.yaml|*.yml)
+    SANDBOX_FILE="$1"
+    ;;
+  "")
+    SANDBOX_FILE="sandbox.yaml"
+    ;;
+  *)
+    echo "Usage: $0 [sandbox.yaml | --rejoin <name>]"
+    exit 1
+    ;;
+esac
 
-# ── Rejoin: connect directly without creating a new sandbox ───────────
-if [[ -n "$REJOIN" ]]; then
-  echo "Reconnecting to sandbox: $REJOIN"
-  exec "$CLI" sandbox connect "$REJOIN"
-fi
+[[ -f "$SANDBOX_FILE" ]] || { echo "ERROR: $SANDBOX_FILE not found."; exit 1; }
 
-# ── Pre-flight ─────────────────────────────────────────────────────────
-echo "=== Pre-flight checks ==="
-echo -n "  Gateway ($OPENSHELL_GATEWAY): "
-"$CLI" inference get &>/dev/null && echo "reachable" || { echo "UNREACHABLE — run ./deploy-ocp.sh"; exit 1; }
+echo "=== Applying $SANDBOX_FILE ==="
+kubectl apply -n "$NAMESPACE" -f "$SANDBOX_FILE"
 
-model=$("$CLI" inference get 2>/dev/null | grep Model: | awk '{print $2}')
-[[ -n "$model" ]] && echo "  Inference route: $model" || { echo "  ERROR: inference not set — run ./setup-providers.sh"; exit 1; }
-
-# Clean up any previous failed Job/sandbox with the same name
-JOB_NAME="sandbox-${NAME}"
-CM_NAME="sandbox-${NAME}"
-if kubectl get job "$JOB_NAME" -n "$NAMESPACE" &>/dev/null 2>&1; then
-  echo "  Deleting previous Job: $JOB_NAME"
-  kubectl delete job "$JOB_NAME" -n "$NAMESPACE" 2>/dev/null || true
-fi
-if "$CLI" sandbox list 2>/dev/null | awk 'NR>1 {print $1}' | grep -qFx "$NAME"; then
-  echo "  Deleting previous sandbox: $NAME"
-  "$CLI" sandbox delete "$NAME" 2>/dev/null || true
-fi
-
-# ── Generate and apply YAML ────────────────────────────────────────────
+JOB_NAME=$(grep -A5 'kind: Job' "$SANDBOX_FILE" | grep 'name:' | head -1 | awk '{print $2}' | tr -d '"')
 echo ""
-echo "=== Launching sandbox: $NAME ==="
-kubectl apply -n "$NAMESPACE" -f - <<YAML
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: ${CM_NAME}
-  namespace: ${NAMESPACE}
-data:
-  SANDBOX_NAME: "${NAME}"
-  SANDBOX_PROVIDERS: "${PROVIDERS}"
-  SANDBOX_KEEP: "${KEEP}"
-  SANDBOX_COMMAND: "claude --bare"
----
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: ${JOB_NAME}
-  namespace: ${NAMESPACE}
-  labels:
-    app: openshell-sandbox
-    sandbox-name: "${NAME}"
-spec:
-  backoffLimit: 0
-  template:
-    metadata:
-      labels:
-        app: openshell-sandbox
-        sandbox-name: "${NAME}"
-    spec:
-      serviceAccountName: openshell-launcher
-      restartPolicy: Never
-      containers:
-        - name: launcher
-          image: quay.io/rcochran/openshell:launcher
-          imagePullPolicy: Always
-          envFrom:
-            - configMapRef:
-                name: ${CM_NAME}
-          env:
-            - name: GATEWAY_ENDPOINT
-              value: "https://openshell.openshell.svc.cluster.local:8080"
-            - name: HOME
-              value: "/tmp"
-            - name: JIRA_URL
-              valueFrom:
-                secretKeyRef:
-                  name: openshell-atlassian
-                  key: JIRA_URL
-                  optional: true
-            - name: JIRA_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: openshell-atlassian
-                  key: JIRA_USERNAME
-                  optional: true
-          volumeMounts:
-            - name: gws
-              mountPath: /secrets/gws
-              readOnly: true
-            - name: gateway-mtls
-              mountPath: /secrets/mtls
-              readOnly: true
-      volumes:
-        - name: gws
-          secret:
-            secretName: openshell-gws
-            optional: true
-        - name: gateway-mtls
-          secret:
-            secretName: openshell-client-tls
-YAML
-
-echo ""
-echo "Job created. Streaming logs (Ctrl-C to detach, sandbox keeps running):"
+echo "Waiting for launcher..."
 kubectl wait --for=condition=ready pod -n "$NAMESPACE" \
-  -l "sandbox-name=${NAME}" --timeout=120s 2>/dev/null || true
-kubectl attach -n "$NAMESPACE" -it \
-  "$(kubectl get pod -n "$NAMESPACE" -l "sandbox-name=${NAME}" -o name | head -1)" \
-  -c launcher 2>/dev/null || \
-kubectl logs -n "$NAMESPACE" -f \
-  "$(kubectl get pod -n "$NAMESPACE" -l "sandbox-name=${NAME}" -o name | head -1)" \
-  -c launcher 2>/dev/null || true
+  -l "job-name=${JOB_NAME}" --timeout=120s 2>/dev/null || true
+
+echo ""
+kubectl logs -n "$NAMESPACE" -f -l "job-name=${JOB_NAME}" 2>/dev/null || true

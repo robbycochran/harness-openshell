@@ -12,7 +12,7 @@
 #   kubectl apply -f sandbox.yaml    # launch sandbox
 #   kubectl delete -f sandbox.yaml   # stop sandbox
 #
-# Configuration: edit the ConfigMap below.
+# Configuration: edit the config.yaml section below.
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -20,19 +20,22 @@ metadata:
   name: sandbox-agent
   namespace: openshell
 data:
-  # Sandbox name — must be unique per running sandbox
-  SANDBOX_NAME: "agent"
+  config.yaml: |
+    name: agent
+    command: claude --bare
+    keep: true
 
-  # Space-separated list of registered provider names to attach.
-  # Available after running ./setup-providers.sh.
-  SANDBOX_PROVIDERS: "github vertex-local atlassian"
+    providers:
+      - github
+      - vertex-local
+      - atlassian
 
-  # Keep the sandbox alive after the initial session exits.
-  # Set to "false" to auto-delete on exit.
-  SANDBOX_KEEP: "true"
-
-  # Command to run inside the sandbox.
-  SANDBOX_COMMAND: "claude --bare"
+    # Plugin marketplaces to register at sandbox creation.
+    # Uses: claude plugin marketplace add <org/repo>
+    # Private repos work via the github provider (proxy resolves GITHUB_TOKEN).
+    skills:
+      - repo: https://github.com/stackrox/skills
+      # - repo: https://github.com/robbycochran/skills
 ---
 apiVersion: batch/v1
 kind: Job
@@ -42,7 +45,6 @@ metadata:
   labels:
     app: openshell-sandbox
 spec:
-  # Do not restart — if the sandbox exits, the Job is done.
   backoffLimit: 0
   template:
     metadata:
@@ -57,20 +59,11 @@ spec:
           image: quay.io/rcochran/openshell:launcher
           imagePullPolicy: Always
 
-          # Load all ConfigMap keys as environment variables
-          envFrom:
-            - configMapRef:
-                name: sandbox-agent
-
-          # Point to the in-cluster gateway (no mTLS needed from inside the cluster
-          # when allowUnauthenticatedUsers=true; the gateway is not internet-exposed)
           env:
             - name: GATEWAY_ENDPOINT
               value: "https://openshell.openshell.svc.cluster.local:8080"
             - name: HOME
               value: "/tmp"
-            # Atlassian non-secret config — sourced from secret for convenience
-            # but these are not sensitive values
             - name: JIRA_URL
               valueFrom:
                 secretKeyRef:
@@ -85,30 +78,24 @@ spec:
                   optional: true
 
           volumeMounts:
-            # GWS OAuth credentials (from setup-creds.sh)
+            - name: config
+              mountPath: /etc/openshell/sandbox
+              readOnly: true
             - name: gws
               mountPath: /secrets/gws
               readOnly: true
-            # Atlassian URL + username (from setup-creds.sh)
-            - name: atlassian
-              mountPath: /secrets/atlassian
-              readOnly: true
-            # mTLS client cert for gateway connection
             - name: gateway-mtls
               mountPath: /secrets/mtls
               readOnly: true
 
       volumes:
+        - name: config
+          configMap:
+            name: sandbox-agent
         - name: gws
           secret:
             secretName: openshell-gws
-            optional: true   # sandbox launches without GWS if secret absent
-        - name: atlassian
-          secret:
-            secretName: openshell-atlassian
-            optional: true   # sandbox launches without Atlassian if secret absent
+            optional: true
         - name: gateway-mtls
           secret:
             secretName: openshell-client-tls
-
-      imagePullSecrets: []   # add pull secret name here if registry is private
