@@ -66,6 +66,9 @@ echo ""
 echo "=== Registering providers ==="
 
 # ── GitHub ─────────────────────────────────────────────────────────────
+# The built-in github profile supports read-only access (clone/fetch).
+# For push access, use openshell policy set to add git-receive-pack rules.
+# See: https://github.com/NVIDIA/OpenShell/blob/main/docs/get-started/tutorials/github-sandbox.mdx
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then
   if ! provider_exists github; then
     "$CLI" provider create --name github --type github \

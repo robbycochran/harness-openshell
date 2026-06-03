@@ -50,14 +50,38 @@ network_policies:
       - { path: /usr/local/bin/claude }
       - { path: /usr/bin/node }
 
-  # GitHub content downloads
+  # Git Smart HTTP transport — allows clone and fetch.
+  # Push (git-receive-pack) is blocked by default. To enable push for
+  # specific repos, use openshell policy set with explicit rules. See:
+  # https://github.com/NVIDIA/OpenShell/blob/main/docs/get-started/tutorials/github-sandbox.mdx
+  github_git:
+    name: github-git
+    endpoints:
+      - host: github.com
+        port: 443
+        protocol: rest
+        tls: terminate
+        enforcement: enforce
+        rules:
+          - allow:
+              method: GET
+              path: "/**/info/refs*"
+          - allow:
+              method: POST
+              path: "/**/git-upload-pack"
+    binaries:
+      - { path: /usr/bin/git }
+
+  # GitHub content downloads (release assets, raw content, archives)
   github_downloads:
     name: github-downloads
     endpoints:
       - { host: "*.githubusercontent.com", port: 443 }
+      - { host: codeload.github.com, port: 443 }
     binaries:
       - { path: /usr/bin/curl }
       - { path: /usr/bin/gh }
+      - { path: /usr/bin/git }
       - { path: /usr/local/bin/uv }
 
   # GWS (no provider profile active — creds are uploaded files)
