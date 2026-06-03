@@ -12,6 +12,12 @@
 #   ./deploy-local.sh
 set -euo pipefail
 
+if [[ "${OPENSHELL_GATEWAY:-}" == "ocp" ]]; then
+  echo "ERROR: OPENSHELL_GATEWAY=ocp — this script is for local gateways."
+  echo "  Use ./deploy-ocp.sh for OpenShift, or: unset OPENSHELL_GATEWAY"
+  exit 1
+fi
+
 CLI="${OPENSHELL_CLI:-openshell}"
 command -v "$CLI" &>/dev/null || {
   echo "ERROR: openshell CLI not found. Install it first:"
