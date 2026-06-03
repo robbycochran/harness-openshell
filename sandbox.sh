@@ -14,8 +14,16 @@
 # Edit sandbox.yaml to configure name, providers, skills, etc.
 set -euo pipefail
 
-export OPENSHELL_GATEWAY="${GATEWAY_NAME:-ocp}"
+export OPENSHELL_GATEWAY="${GATEWAY_NAME:-${OPENSHELL_GATEWAY:-}}"
 NAMESPACE="${OPENSHELL_NAMESPACE:-openshell}"
+
+# This script is for OpenShift — require explicit OPENSHELL_GATEWAY=ocp
+if [[ "$OPENSHELL_GATEWAY" != "ocp" ]]; then
+  echo "ERROR: This script is for OpenShift (OPENSHELL_GATEWAY=ocp)."
+  echo "  For local sandboxes, use: ./sandbox-local.sh"
+  echo "  For OpenShift: export OPENSHELL_GATEWAY=ocp"
+  exit 1
+fi
 
 CLI="${OPENSHELL_CLI:-openshell}"
 command -v "$CLI" &>/dev/null || { echo "ERROR: openshell CLI not found."; exit 1; }
