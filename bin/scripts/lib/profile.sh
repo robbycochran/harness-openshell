@@ -1,32 +1,20 @@
 #!/usr/bin/env bash
-# Agent config parsing helpers.
+# Profile parsing helpers.
 #
 # Source from any script:
 #   source "$(dirname "$0")/lib/profile.sh"
 #
 # Usage:
-#   parse_agent agents/default.toml
+#   parse_profile profiles/default.toml
 #   # Sets: SANDBOX_IMAGE, SANDBOX_COMMAND, SANDBOX_NAME,
 #   #       SANDBOX_PROVIDERS, SANDBOX_ENV, SANDBOX_KEEP
 
-parse_agent() {
-  local agent_file="$1"
-  [[ -f "$agent_file" ]] || { echo "ERROR: $agent_file not found."; exit 1; }
+LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-  eval "$(python3 -c "
-import tomllib, sys, shlex
-with open(sys.argv[1], 'rb') as f:
-    c = tomllib.load(f)
-print(f'SANDBOX_NAME={shlex.quote(c.get(\"name\", \"agent\"))}')
-print(f'SANDBOX_IMAGE={shlex.quote(c.get(\"image\", \"\"))}')
-print(f'SANDBOX_COMMAND={shlex.quote(c.get(\"command\", \"claude --bare\"))}')
-print(f'SANDBOX_KEEP={shlex.quote(str(c.get(\"keep\", True)).lower())}')
-providers = c.get('providers', [])
-print(f'SANDBOX_PROVIDERS={shlex.quote(\" \".join(providers))}')
-env = c.get('env', {})
-lines = [f'export {k}={v}' for k, v in env.items()]
-print(f'SANDBOX_ENV={shlex.quote(chr(10).join(lines) + chr(10))}')
-" "$agent_file")"
+parse_profile() {
+  local profile_file="$1"
+  [[ -f "$profile_file" ]] || { echo "ERROR: $profile_file not found."; exit 1; }
+  eval "$(python3 "$LIB_DIR/parse-profile.py" "$profile_file")"
 }
 
 # Build provider flags array from SANDBOX_PROVIDERS.
@@ -45,10 +33,6 @@ build_provider_flags() {
 
 # Stage sandbox.env + GWS credentials to a directory for upload.
 # The directory name must be "openshell" so upload lands at /sandbox/.config/openshell/.
-#
-# Usage:
-#   stage_harness_dir /tmp/openshell
-#   # Creates: $dir/sandbox.env, $dir/credentials.json, $dir/client_secret.json
 stage_harness_dir() {
   local dir="$1"
   mkdir -p "$dir"
