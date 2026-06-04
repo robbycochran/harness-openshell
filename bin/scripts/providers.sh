@@ -61,7 +61,7 @@ if $FORCE; then
     "$CLI" provider profile delete "$id" 2>/dev/null || true
   done
 fi
-"$CLI" provider profile import --from "$SCRIPT_DIR/sandbox/profiles/" 2>/dev/null || echo "  (already imported)"
+"$CLI" provider profile import --from "$HARNESS_DIR/sandbox/profiles/" 2>/dev/null || echo "  (already imported)"
 
 echo ""
 echo "=== Registering providers ==="

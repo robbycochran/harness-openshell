@@ -4,7 +4,7 @@ Three config files drive the harness:
 
 - **`providers.toml`** — provider definitions (inputs, types, checks)
 - **`openshell.toml`** — which providers to enable, inference model
-- **`agents/*.toml`** — per-agent sandbox config (image, command, env vars)
+- **`profiles/*.toml`** — per-agent sandbox config (image, command, env vars)
 
 ## providers.toml
 
@@ -71,7 +71,7 @@ model = "claude-sonnet-4-6"
 
 If absent, all providers are enabled.
 
-## agents/*.toml
+## profiles/*.toml
 
 Per-agent sandbox configuration. `sandbox-podman.sh` and `sandbox-ocp.sh` read these.
 

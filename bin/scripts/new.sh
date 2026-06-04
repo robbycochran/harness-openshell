@@ -62,7 +62,7 @@ fi
 # ── 4. Parse profile ─────────────────────────────────────────────────
 PROFILE_FILE="$HARNESS_DIR/profiles/${PROFILE}.toml"
 NAME_OVERRIDE="$SANDBOX_NAME"
-parse_agent "$PROFILE_FILE"
+parse_profile "$PROFILE_FILE"
 [[ -n "$NAME_OVERRIDE" ]] && SANDBOX_NAME="$NAME_OVERRIDE"
 
 echo ""
