@@ -155,6 +155,8 @@ spec:
             - name: HOME
               value: "/tmp"
           volumeMounts:
+            - name: tmp
+              mountPath: /tmp
             - name: config
               mountPath: /etc/openshell/sandbox
               readOnly: true
@@ -168,6 +170,8 @@ spec:
               mountPath: /etc/openshell/env
               readOnly: true
       volumes:
+        - name: tmp
+          emptyDir: {}
         - name: config
           configMap:
             name: sandbox-${SANDBOX_NAME}

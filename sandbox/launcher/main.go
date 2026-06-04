@@ -43,12 +43,6 @@ func parseConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-type gatewayMetadata struct {
-	GatewayEndpoint string `json:"gateway_endpoint"`
-	AuthMode        string `json:"auth_mode"`
-	Name            string `json:"name,omitempty"`
-}
-
 func configureGateway(endpoint, mtlsDir, cli string) error {
 	certFile := filepath.Join(mtlsDir, "tls.crt")
 	if _, err := os.Stat(certFile); err != nil {
@@ -59,7 +53,13 @@ func configureGateway(endpoint, mtlsDir, cli string) error {
 	}
 
 	httpEndpoint := strings.Replace(endpoint, "https:", "http:", 1)
-	run(cli, "gateway", "add", httpEndpoint, "--name", "openshell")
+
+	// Register via http:// (skips cert validation probe), then patch to https + mTLS.
+	// Let the CLI create the full metadata.json with all required fields.
+	cmd := exec.Command(cli, "gateway", "add", httpEndpoint, "--name", "openshell")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stdout
+	cmd.Run()
 
 	home := os.Getenv("HOME")
 	gwDir := filepath.Join(home, ".config", "openshell", "gateways", "openshell")
@@ -68,17 +68,18 @@ func configureGateway(endpoint, mtlsDir, cli string) error {
 		return fmt.Errorf("creating mtls dir: %w", err)
 	}
 
+	// Patch metadata.json — read what gateway add created, update only the
+	// two fields we need. Preserve all other fields the CLI wrote.
 	metaPath := filepath.Join(gwDir, "metadata.json")
-	data, err := os.ReadFile(metaPath)
-	if err != nil {
-		return fmt.Errorf("reading metadata.json: %w", err)
+	var meta map[string]any
+	if data, err := os.ReadFile(metaPath); err == nil {
+		json.Unmarshal(data, &meta)
 	}
-	var meta gatewayMetadata
-	if err := json.Unmarshal(data, &meta); err != nil {
-		return fmt.Errorf("parsing metadata.json: %w", err)
+	if meta == nil {
+		meta = make(map[string]any)
 	}
-	meta.GatewayEndpoint = endpoint
-	meta.AuthMode = "mtls"
+	meta["gateway_endpoint"] = endpoint
+	meta["auth_mode"] = "mtls"
 	out, err := json.Marshal(meta)
 	if err != nil {
 		return fmt.Errorf("marshaling metadata.json: %w", err)
@@ -92,6 +93,8 @@ func configureGateway(endpoint, mtlsDir, cli string) error {
 			return fmt.Errorf("copying %s: %w", name, err)
 		}
 	}
+
+	run(cli, "gateway", "select", "openshell")
 	fmt.Println("  ✓ mTLS gateway configured")
 	return nil
 }
@@ -134,7 +137,7 @@ func stageFiles(cfg *Config, gwsDir, harnessDir string) error {
 			return fmt.Errorf("reading gws dir: %w", err)
 		}
 		for _, e := range entries {
-			if !e.IsDir() {
+			if !e.IsDir() && !strings.HasPrefix(e.Name(), "..") {
 				src := filepath.Join(gwsDir, e.Name())
 				dst := filepath.Join(harnessDir, e.Name())
 				if err := copyFile(src, dst); err != nil {
@@ -239,6 +242,13 @@ func main() {
 	}
 	configPath := "/etc/openshell/sandbox/config.toml"
 
+	// Scratch images have no filesystem — ensure HOME exists.
+	home := os.Getenv("HOME")
+	if home == "" {
+		home = "/tmp"
+	}
+	os.MkdirAll(home, 0o755)
+
 	if err := configureGateway(endpoint, "/secrets/mtls", cli); err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: gateway config: %v\n", err)
 		os.Exit(1)
@@ -260,7 +270,7 @@ func main() {
 
 	providers := checkProviders(cfg.Providers, cli)
 
-	harnessDir := "/tmp/openshell"
+	harnessDir := filepath.Join(home, "openshell")
 	if err := stageFiles(cfg, "/secrets/gws", harnessDir); err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: staging files: %v\n", err)
 		os.Exit(1)
