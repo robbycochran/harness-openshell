@@ -13,7 +13,7 @@ PLATFORM      := linux/amd64
 SANDBOX_IMAGE  := $(REGISTRY):sandbox
 LAUNCHER_IMAGE := $(REGISTRY):launcher
 
-.PHONY: sandbox push-sandbox launcher push-launcher \
+.PHONY: sandbox push-sandbox cli-launcher launcher push-launcher \
         test test-podman test-ocp clean help
 
 ## ── Images ────────────────────────────────────────────────────────────
@@ -27,9 +27,13 @@ sandbox: sandbox/Dockerfile sandbox/startup.sh \
 push-sandbox: sandbox
 	@echo "Already pushed by buildx"
 
-## Launcher image (openshell CLI for in-cluster sandbox creation)
-launcher: sandbox/launcher/Dockerfile sandbox/launcher/entrypoint.sh \
-          sandbox/launcher/openshell
+## Cross-compile Go launcher binary for linux/amd64
+cli-launcher:
+	cd sandbox/launcher && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o launcher .
+	@echo "Built: sandbox/launcher/launcher"
+
+## Launcher image (Go binary + openshell CLI, scratch-based)
+launcher: cli-launcher sandbox/launcher/Dockerfile sandbox/launcher/openshell
 	docker build --platform $(PLATFORM) -t $(LAUNCHER_IMAGE) sandbox/launcher/
 	@echo "Built: $(LAUNCHER_IMAGE)"
 
@@ -54,7 +58,7 @@ test-ocp: sandbox push-launcher
 
 ## Clean staged binaries
 clean:
-	rm -f sandbox/launcher/openshell
+	rm -f sandbox/launcher/openshell sandbox/launcher/launcher
 	@echo "Cleaned staged binaries"
 
 ## Show available targets

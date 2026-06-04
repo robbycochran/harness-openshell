@@ -15,6 +15,7 @@ __pycache__/
 
 # Build artifacts
 sandbox/launcher/openshell
+sandbox/launcher/launcher
 infracluster/
 dashboard.html
 .claude/
