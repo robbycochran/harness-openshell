@@ -3,10 +3,9 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"os/exec"
-	"strings"
 	"time"
 
+	"github.com/robbycochran/harness-openshell/internal/gateway"
 	"github.com/robbycochran/harness-openshell/internal/profile"
 	"github.com/robbycochran/harness-openshell/internal/runner"
 	"github.com/spf13/cobra"
@@ -33,7 +32,9 @@ func NewNewCmd(harnessDir, cli string) *cobra.Command {
 			if remote {
 				return newRemote(harnessDir, profileName, sandboxName, noTTY)
 			}
-			return newLocal(harnessDir, cli, local, profileName, sandboxName, noTTY)
+
+			gw := gateway.NewCLI(cli)
+			return newLocal(harnessDir, gw, local, profileName, sandboxName, noTTY)
 		},
 	}
 
@@ -57,7 +58,7 @@ func newRemote(harnessDir, profileName, sandboxName string, noTTY bool) error {
 	return runner.RunScript(harnessDir, "new.sh", args...)
 }
 
-func newLocal(harnessDir, cli string, ensureLocal bool, profileName, sandboxName string, noTTY bool) error {
+func newLocal(harnessDir string, gw gateway.Gateway, ensureLocal bool, profileName, sandboxName string, noTTY bool) error {
 	// 1. Ensure gateway
 	if ensureLocal {
 		fmt.Println("=== Ensuring local gateway ===")
@@ -65,15 +66,14 @@ func newLocal(harnessDir, cli string, ensureLocal bool, profileName, sandboxName
 			return fmt.Errorf("deploy failed: %w", err)
 		}
 	} else {
-		if err := runner.RunCLISilent(cli, "inference", "get"); err != nil {
+		if err := gw.InferenceGet(); err != nil {
 			return fmt.Errorf("no active gateway — use --local or --remote")
 		}
 	}
 
 	// 2. Ensure providers
-	out, _ := runner.RunCLIOutput(cli, "provider", "list")
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	if len(lines) <= 1 {
+	providers, _ := gw.ProviderList()
+	if len(providers) == 0 {
 		fmt.Println("\n=== Registering providers ===")
 		if err := runner.RunScript(harnessDir, "providers.sh"); err != nil {
 			return fmt.Errorf("provider registration failed: %w", err)
@@ -97,7 +97,7 @@ func newLocal(harnessDir, cli string, ensureLocal bool, profileName, sandboxName
 	// 4. Validate providers against profile
 	fmt.Println()
 	fmt.Println("=== Providers ===")
-	registered, missing := profile.ValidateProviders(cfg.Providers, cli)
+	registered, missing := profile.ValidateProviders(cfg.Providers, gw)
 	for _, name := range registered {
 		fmt.Printf("  ✓ %s: attached\n", name)
 	}
@@ -116,43 +116,34 @@ func newLocal(harnessDir, cli string, ensureLocal bool, profileName, sandboxName
 		return fmt.Errorf("staging files: %w", err)
 	}
 
-	// 6. Create sandbox with retry
-	ttyFlag := "--tty"
-	if noTTY {
-		ttyFlag = "--no-tty"
-	}
-
+	// 6. Build command
 	var sandboxCmd []string
 	if noTTY {
-		sandboxCmd = []string{"--", "bash", "/sandbox/startup.sh"}
+		sandboxCmd = []string{"bash", "/sandbox/startup.sh"}
 	} else {
-		sandboxCmd = []string{"--", "bash", "-c", fmt.Sprintf(". /sandbox/startup.sh && exec %s", cfg.Command)}
+		sandboxCmd = []string{"bash", "-c", fmt.Sprintf(". /sandbox/startup.sh && exec %s", cfg.Command)}
 	}
 
+	// 7. Create sandbox with retry
 	fmt.Println()
 	fmt.Println("=== Creating sandbox ===")
 	for attempt := 1; attempt <= 5; attempt++ {
-		args := []string{"sandbox", "create", ttyFlag}
-		args = append(args, "--name", cfg.Name)
-		if cfg.Image != "" {
-			args = append(args, "--from", cfg.Image)
-		}
-		for _, p := range registered {
-			args = append(args, "--provider", p)
-		}
-		args = append(args, "--upload", harnessUploadDir+":/sandbox/.config", "--no-git-ignore")
-		args = append(args, sandboxCmd...)
-
-		c := exec.Command(cli, args...)
-		c.Stdin = os.Stdin
-		c.Stdout = os.Stdout
-		c.Stderr = os.Stderr
-		if c.Run() == nil {
+		err := gw.SandboxCreate(gateway.SandboxCreateOpts{
+			Name:      cfg.Name,
+			Image:     cfg.Image,
+			Providers: registered,
+			TTY:       !noTTY,
+			Keep:      cfg.KeepSandbox(),
+			UploadSrc: harnessUploadDir,
+			UploadDst: "/sandbox/.config",
+			Command:   sandboxCmd,
+		})
+		if err == nil {
 			return nil
 		}
 
 		fmt.Printf("  Attempt %d failed (supervisor race), retrying in 5s...\n", attempt)
-		runner.RunCLISilent(cli, "sandbox", "delete", cfg.Name)
+		gw.SandboxDelete(cfg.Name)
 
 		if attempt == 5 {
 			return fmt.Errorf("failed after 5 attempts")

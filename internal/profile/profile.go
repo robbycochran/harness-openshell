@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/robbycochran/harness-openshell/internal/gateway"
 )
 
 type Config struct {
@@ -44,12 +46,9 @@ func (c *Config) BuildSandboxEnv() string {
 
 // ValidateProviders checks which profile providers are registered on the
 // gateway. Returns the list of registered providers and a list of missing ones.
-func ValidateProviders(providers []string, cli string) (registered, missing []string) {
+func ValidateProviders(providers []string, gw gateway.Gateway) (registered, missing []string) {
 	for _, name := range providers {
-		cmd := exec.Command(cli, "provider", "get", name)
-		cmd.Stdout = io.Discard
-		cmd.Stderr = io.Discard
-		if cmd.Run() == nil {
+		if gw.ProviderGet(name) == nil {
 			registered = append(registered, name)
 		} else {
 			missing = append(missing, name)

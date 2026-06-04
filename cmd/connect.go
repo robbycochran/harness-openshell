@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/robbycochran/harness-openshell/internal/runner"
+	"github.com/robbycochran/harness-openshell/internal/gateway"
 	"github.com/spf13/cobra"
 )
 
@@ -11,11 +11,12 @@ func NewConnectCmd(cli string) *cobra.Command {
 		Short: "Reconnect to a running sandbox",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cliArgs := []string{"sandbox", "connect"}
+			gw := gateway.NewCLI(cli)
+			name := ""
 			if len(args) > 0 {
-				cliArgs = append(cliArgs, args[0])
+				name = args[0]
 			}
-			return runner.Exec(cli, cliArgs...)
+			return gw.SandboxConnect(name)
 		},
 	}
 }
