@@ -9,8 +9,9 @@
 #   ./test-flow.sh podman --full         # full bash: + sandbox + verify integrations
 #   ./test-flow.sh podman --go           # quick Go: same flow via Go binary
 #   ./test-flow.sh podman --full --go    # full Go
-#   ./test-flow.sh ocp [--full] [--go]   # OCP variants
-#   ./test-flow.sh all [--full] [--go]   # both platforms
+#   ./test-flow.sh ocp [--full] [--go]           # OCP variants
+#   ./test-flow.sh ocp --full --reuse-gateway   # skip deploy/teardown-k8s (~50s vs ~130s)
+#   ./test-flow.sh all [--full] [--go]           # both platforms
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -21,18 +22,20 @@ CLI="${OPENSHELL_CLI:-openshell}"
 TARGET=""
 FULL=false
 USE_GO=false
+REUSE_GATEWAY=false
 
 for arg in "$@"; do
   case "$arg" in
-    --full) FULL=true ;;
-    --go)   USE_GO=true ;;
-    -*)     ;;
-    *)      [[ -z "$TARGET" ]] && TARGET="$arg" ;;
+    --full)           FULL=true ;;
+    --go)             USE_GO=true ;;
+    --reuse-gateway)  REUSE_GATEWAY=true ;;
+    -*)               ;;
+    *)                [[ -z "$TARGET" ]] && TARGET="$arg" ;;
   esac
 done
 
 if [[ -z "$TARGET" ]]; then
-  echo "Usage: $0 <podman|ocp|all> [--full] [--go]"
+  echo "Usage: $0 <podman|ocp|all> [--full] [--go] [--reuse-gateway]"
   exit 1
 fi
 
@@ -150,9 +153,14 @@ test_errors() {
   # Bad profile
   step_fail "nonexistent profile" "$HARNESS" new --local --profile nonexistent --no-tty
 
-  # Teardown idempotency
-  step "teardown (first)" "$HARNESS" teardown
-  step "teardown (second)" "$HARNESS" teardown
+  # Teardown idempotency (skip k8s teardown when reusing gateway)
+  if $REUSE_GATEWAY; then
+    step "teardown (first)" "$HARNESS" teardown --sandboxes --providers
+    step "teardown (second)" "$HARNESS" teardown --sandboxes --providers
+  else
+    step "teardown (first)" "$HARNESS" teardown
+    step "teardown (second)" "$HARNESS" teardown
+  fi
 
   echo ""
 }
@@ -192,10 +200,22 @@ test_podman() {
 test_ocp() {
   local mode="quick"
   $FULL && mode="full"
+  $REUSE_GATEWAY && mode="$mode, reuse-gateway"
   echo "=== test-flow: ocp ($mode) [$IMPL] ==="
 
-  step "teardown" "$HARNESS" teardown
-  step "deploy" "$HARNESS" deploy --remote
+  if $REUSE_GATEWAY; then
+    step "teardown sandboxes+providers" "$HARNESS" teardown --sandboxes --providers
+    # Deploy only if gateway is not reachable
+    if ! "$CLI" inference get &>/dev/null; then
+      step "deploy" "$HARNESS" deploy --remote
+    else
+      step "gateway reachable" "$CLI" inference get
+    fi
+  else
+    step "teardown" "$HARNESS" teardown
+    step "deploy" "$HARNESS" deploy --remote
+  fi
+
   step "setup creds" "$SCRIPT_DIR/bin/scripts/creds.sh"
   step "setup providers" "$HARNESS" providers
   step "gateway reachable" "$CLI" inference get
@@ -214,7 +234,11 @@ test_ocp() {
     step "sandbox delete" "$CLI" sandbox delete "$sandbox_name"
   fi
 
-  step "teardown (clean)" "$HARNESS" teardown
+  if $REUSE_GATEWAY; then
+    step "teardown (sandboxes+providers)" "$HARNESS" teardown --sandboxes --providers
+  else
+    step "teardown (clean)" "$HARNESS" teardown
+  fi
 }
 
 # ── Main ─────────────────────────────────────────────────────────────
