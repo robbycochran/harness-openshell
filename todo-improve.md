@@ -65,6 +65,11 @@ won't conflict with design.md changes.
 - [x] **SCC grant/revoke lists** — shared `sccPrivilegedSAs` slice [S]
 - [ ] **launcher image single-arch** — use `docker buildx` for launcher. `Makefile` [S]
 
+## Config improvements
+
+- [ ] **Provider env vars (JIRA_URL, JIRA_USERNAME) should come from environment** — these are validated as `kind = "env"` inputs in `providers.toml` but hardcoded in `profiles/default.toml`. Profile should use `$JIRA_URL` / `$JIRA_USERNAME` references expanded at build time via `os.ExpandEnv`, so changing a Jira URL doesn't require editing the profile. Needs `BuildSandboxEnv` to expand env var references in values. [S]
+- [ ] **Provider-specific env vars should flow from provider config, not profile** — longer-term, JIRA_URL and JIRA_USERNAME shouldn't be in the profile at all. Provider registration should carry config values that get injected into the sandbox automatically. See design.md "Config files" section. [M]
+
 ## Defer to rearchitect (design.md)
 
 These will be restructured or replaced during the command/code reorg.
