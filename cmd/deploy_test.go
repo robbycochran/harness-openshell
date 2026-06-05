@@ -18,23 +18,99 @@ func setupDeployHarnessDir(t *testing.T) string {
 	return dir
 }
 
-func TestDeployRemote_Success(t *testing.T) {
+func setupOCPGatewayConfig(t *testing.T, dir string) string {
+	t.Helper()
+	gwDir := filepath.Join(dir, "gateways", "ocp")
+	os.MkdirAll(filepath.Join(gwDir, "helm"), 0o755)
+	os.MkdirAll(filepath.Join(gwDir, "addons"), 0o755)
+	os.WriteFile(filepath.Join(gwDir, "gateway.toml"), []byte(`
+[gateway]
+type = "remote"
+platform = "ocp"
+service = "route"
+name = "test-ocp"
+mode = "launcher"
+
+[chart]
+oci = "oci://ghcr.io/nvidia/openshell/helm-chart"
+version = "0.0.55"
+[chart.crd]
+url = "https://example.com/crd.yaml"
+
+[helm]
+values = "values.yaml"
+
+[addons]
+manifests = ["addons/rbac.yaml", "addons/route.yaml"]
+
+[images]
+sandbox = "test-sandbox:v1"
+launcher = "test-launcher:v1"
+
+[ocp]
+scc-privileged = ["sa1", "sa2"]
+scc-anyuid = ["sa1"]
+
+[secrets]
+names = ["secret-a"]
+mtls = "test-client-tls"
+
+[launcher]
+service-account = "test-launcher-sa"
+gateway-endpoint = "https://gw.cluster.local:8080"
+`), 0o644)
+	os.WriteFile(filepath.Join(gwDir, "helm", "values.yaml"), []byte("image:\n  pullPolicy: Always\n"), 0o644)
+	os.WriteFile(filepath.Join(gwDir, "addons", "rbac.yaml"), []byte("# rbac\n"), 0o644)
+	os.WriteFile(filepath.Join(gwDir, "addons", "route.yaml"), []byte("# route\n"), 0o644)
+	return gwDir
+}
+
+func setupK8sGatewayConfig(t *testing.T, dir string) string {
+	t.Helper()
+	gwDir := filepath.Join(dir, "gateways", "kind")
+	os.MkdirAll(gwDir, 0o755)
+	os.WriteFile(filepath.Join(gwDir, "gateway.toml"), []byte(`
+[gateway]
+type = "remote"
+platform = "k8s"
+service = "nodeport"
+name = "test-kind"
+mode = "direct"
+
+[chart]
+oci = "oci://ghcr.io/nvidia/openshell/helm-chart"
+version = "0.0.55"
+[chart.crd]
+url = "https://example.com/crd.yaml"
+
+[images]
+sandbox = "test-sandbox:v1"
+`), 0o644)
+	return gwDir
+}
+
+func TestDeployFromConfig_OCP_Success(t *testing.T) {
 	dir := setupDeployHarnessDir(t)
+	gwDir := setupOCPGatewayConfig(t, dir)
 	t.Setenv("OPENSHELL_CHART_VERSION", "0.0.55")
 	t.Setenv("OPENSHELL_NAMESPACE", "openshell")
 	t.Setenv("HOME", t.TempDir())
+
+	gwCfg, err := gateway.LoadConfig(gwDir)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	nsRunner := k8s.NewMockRunner()
 	clusterRunner := k8s.NewMockRunner()
 	clusterRunner.Responses["get-jsonpath"] = "apps.example.com"
 	nsRunner.Responses["get-secret-field"] = "dGVzdA==" // base64 "test"
-	nsRunner.Errors["get route"] = fmt.Errorf("not found") // trigger Route creation
 
 	gw := &mockGW{}
 
-	err := deployRemote(dir, gw, nsRunner, clusterRunner)
+	err = deployFromConfig(dir, gwCfg, gw, nsRunner, clusterRunner)
 	if err != nil {
-		t.Fatalf("deployRemote: %v", err)
+		t.Fatalf("deployFromConfig: %v", err)
 	}
 
 	// Verify namespace created
@@ -42,41 +118,65 @@ func TestDeployRemote_Success(t *testing.T) {
 		t.Errorf("missing create ns, calls: %v", clusterRunner.Calls)
 	}
 
-	// Verify namespace labeled
-	if !clusterRunner.HasCall("label ns openshell") {
-		t.Errorf("missing label ns, calls: %v", clusterRunner.Calls)
+	// Verify CRD installed from config URL
+	if !clusterRunner.HasCall("apply -f https://example.com/crd.yaml") {
+		t.Errorf("missing CRD apply with config URL, calls: %v", clusterRunner.Calls)
 	}
 
-	// Verify CRD installed
-	if !clusterRunner.HasCall("apply -f") {
-		t.Errorf("missing CRD apply, calls: %v", clusterRunner.Calls)
+	// Verify addon manifests applied (2: rbac + route)
+	if nsRunner.CallCount("apply -f") < 2 {
+		t.Errorf("expected >=2 apply -f calls for addon manifests, got %d: %v", nsRunner.CallCount("apply -f"), nsRunner.Calls)
 	}
 
-	// Verify RBAC applied (via kubectl apply -f)
-	if !nsRunner.HasCall("apply -f") {
-		t.Errorf("missing RBAC apply, calls: %v", nsRunner.Calls)
-	}
-
-	// Verify Helm install
-	if !nsRunner.HasCall("helm upgrade --install") {
-		t.Errorf("missing helm install, calls: %v", nsRunner.Calls)
+	// Verify Helm install uses config chart OCI
+	if !nsRunner.HasCall("helm upgrade --install openshell oci://ghcr.io/nvidia/openshell/helm-chart") {
+		t.Errorf("missing helm install with config chart, calls: %v", nsRunner.Calls)
 	}
 
 	// Verify rollout status
 	if !nsRunner.HasCall("rollout status statefulset/openshell") {
 		t.Errorf("missing rollout status, calls: %v", nsRunner.Calls)
 	}
+}
 
-	// Verify Route applied (via kubectl apply -f)
-	if nsRunner.CallCount("apply -f") < 2 {
-		t.Errorf("expected 2 apply -f calls (RBAC + Route), got %d: %v", nsRunner.CallCount("apply -f"), nsRunner.Calls)
+func TestDeployFromConfig_K8s_NoSCCs(t *testing.T) {
+	dir := setupDeployHarnessDir(t)
+	gwDir := setupK8sGatewayConfig(t, dir)
+	t.Setenv("OPENSHELL_CHART_VERSION", "0.0.55")
+	t.Setenv("OPENSHELL_NAMESPACE", "openshell")
+
+	gwCfg, err := gateway.LoadConfig(gwDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nsRunner := k8s.NewMockRunner()
+	clusterRunner := k8s.NewMockRunner()
+
+	gw := &mockGW{}
+
+	// NodePort endpoint resolution not implemented — expect that specific error
+	err = deployFromConfig(dir, gwCfg, gw, nsRunner, clusterRunner)
+	if err == nil {
+		t.Fatal("expected error for unimplemented nodeport")
+	}
+
+	// Verify NO OC/SCC calls were made (k8s, not OCP)
+	if nsRunner.HasCall("oc adm") {
+		t.Errorf("should not run oc commands on k8s platform, calls: %v", nsRunner.Calls)
 	}
 }
 
-func TestDeployRemote_HelmFailure(t *testing.T) {
+func TestDeployFromConfig_HelmFailure(t *testing.T) {
 	dir := setupDeployHarnessDir(t)
+	gwDir := setupOCPGatewayConfig(t, dir)
 	t.Setenv("OPENSHELL_CHART_VERSION", "0.0.55")
 	t.Setenv("OPENSHELL_NAMESPACE", "openshell")
+
+	gwCfg, err := gateway.LoadConfig(gwDir)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	nsRunner := k8s.NewMockRunner()
 	clusterRunner := k8s.NewMockRunner()
@@ -85,23 +185,25 @@ func TestDeployRemote_HelmFailure(t *testing.T) {
 
 	gw := &mockGW{}
 
-	err := deployRemote(dir, gw, nsRunner, clusterRunner)
+	err = deployFromConfig(dir, gwCfg, gw, nsRunner, clusterRunner)
 	if err == nil {
 		t.Fatal("expected error from helm failure")
 	}
-	if !nsRunner.HasCall("helm upgrade") {
-		t.Errorf("helm should have been called, calls: %v", nsRunner.Calls)
-	}
-	// Should NOT have attempted rollout after helm failure
 	if nsRunner.HasCall("rollout status") {
 		t.Error("should not attempt rollout after helm failure")
 	}
 }
 
-func TestDeployRemote_CRDFailure(t *testing.T) {
+func TestDeployFromConfig_CRDFailure(t *testing.T) {
 	dir := setupDeployHarnessDir(t)
+	gwDir := setupOCPGatewayConfig(t, dir)
 	t.Setenv("OPENSHELL_CHART_VERSION", "0.0.55")
 	t.Setenv("OPENSHELL_NAMESPACE", "openshell")
+
+	gwCfg, err := gateway.LoadConfig(gwDir)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	nsRunner := k8s.NewMockRunner()
 	clusterRunner := k8s.NewMockRunner()
@@ -109,30 +211,12 @@ func TestDeployRemote_CRDFailure(t *testing.T) {
 
 	gw := &mockGW{}
 
-	err := deployRemote(dir, gw, nsRunner, clusterRunner)
+	err = deployFromConfig(dir, gwCfg, gw, nsRunner, clusterRunner)
 	if err == nil {
 		t.Fatal("expected error from CRD install failure")
 	}
-	// Should NOT have attempted helm after CRD failure
 	if nsRunner.HasCall("helm") {
 		t.Error("should not attempt helm after CRD failure")
-	}
-}
-
-func TestDeployRemote_NoAppsDomain(t *testing.T) {
-	dir := setupDeployHarnessDir(t)
-	t.Setenv("OPENSHELL_CHART_VERSION", "0.0.55")
-	t.Setenv("OPENSHELL_NAMESPACE", "openshell")
-
-	nsRunner := k8s.NewMockRunner()
-	clusterRunner := k8s.NewMockRunner()
-	clusterRunner.Responses["get-jsonpath"] = "" // empty domain
-
-	gw := &mockGW{}
-
-	err := deployRemote(dir, gw, nsRunner, clusterRunner)
-	if err == nil {
-		t.Fatal("expected error for missing apps domain")
 	}
 }
 

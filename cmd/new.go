@@ -40,12 +40,21 @@ func NewNewCmd(harnessDir, cli string) *cobra.Command {
 
 			gw := gateway.New(cli)
 
+			// Load gateway config for the selected target
+			gwName := "local"
 			if remote {
-				return newRemote(harnessDir, gw, profileName, sandboxName)
+				gwName = "ocp"
+			}
+			gwDir := filepath.Join(harnessDir, "gateways", gwName)
+			gwCfg, _ := gateway.LoadConfig(gwDir) // nil is fine — backward compat
+
+			if remote {
+				return newRemote(harnessDir, gwCfg, gw, profileName, sandboxName)
 			}
 			return newLocal(newLocalOpts{
 				harnessDir:  harnessDir,
 				gw:          gw,
+				gwCfg:       gwCfg,
 				ensureLocal: local,
 				profileName: profileName,
 				sandboxName: sandboxName,
@@ -67,6 +76,7 @@ func NewNewCmd(harnessDir, cli string) *cobra.Command {
 type newLocalOpts struct {
 	harnessDir  string
 	gw          gateway.Gateway
+	gwCfg       *gateway.GatewayConfig
 	ensureLocal bool
 	profileName string
 	sandboxName string
@@ -74,7 +84,7 @@ type newLocalOpts struct {
 	retrySleep  time.Duration
 }
 
-func newRemote(harnessDir string, gw gateway.Gateway, profileName, sandboxName string) error {
+func newRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gateway, profileName, sandboxName string) error {
 	ctx := context.Background()
 	namespace := k8s.DefaultNamespace()
 	kc := k8s.New("", namespace)
@@ -82,8 +92,11 @@ func newRemote(harnessDir string, gw gateway.Gateway, profileName, sandboxName s
 
 	// 1. Ensure gateway
 	if err := gw.InferenceGet(); err != nil {
+		if gwCfg == nil {
+			return fmt.Errorf("no active gateway and no gateway config — use: harness deploy ocp")
+		}
 		status.Section("Deploying gateway")
-		if err := deployRemote(harnessDir, gw, kc, clusterRunner); err != nil {
+		if err := deployFromConfig(harnessDir, gwCfg, gw, kc, clusterRunner); err != nil {
 			return fmt.Errorf("deploy failed: %w", err)
 		}
 	}
@@ -92,7 +105,7 @@ func newRemote(harnessDir string, gw gateway.Gateway, profileName, sandboxName s
 	providers, _ := gw.ProviderList()
 	if len(providers) == 0 {
 		status.Section("Registering providers")
-		if err := registerProviders(harnessDir, gw, false); err != nil {
+		if err := registerProviders(harnessDir, gw, false, gwCfg); err != nil {
 			return fmt.Errorf("provider registration failed: %w", err)
 		}
 	}
@@ -118,7 +131,12 @@ func newRemote(harnessDir string, gw gateway.Gateway, profileName, sandboxName s
 			fromPath = filepath.Join(harnessDir, fromPath)
 		}
 		if info, err := os.Stat(fromPath); err == nil && info.IsDir() {
-			sandboxImage := envOr("SANDBOX_IMAGE", "ghcr.io/robbycochran/harness-openshell:sandbox")
+			sandboxImage := "ghcr.io/robbycochran/harness-openshell:sandbox"
+			if gwCfg != nil {
+				sandboxImage = gwCfg.Images.Sandbox
+			} else {
+				sandboxImage = envOr("SANDBOX_IMAGE", sandboxImage)
+			}
 			status.Infof("Remote: using image %s (profile 'from' is a local path)", sandboxImage)
 			cfg.From = sandboxImage
 		}
@@ -162,6 +180,17 @@ func newRemote(harnessDir string, gw gateway.Gateway, profileName, sandboxName s
 	kc.RunKubectl(ctx, "delete", "pod", "-l", "job-name="+jobName, "--grace-period=30")
 
 	// 4. Apply launcher Job
+	launcherImage := envOr("LAUNCHER_IMAGE", "ghcr.io/robbycochran/harness-openshell:launcher")
+	launcherSA := "openshell-launcher"
+	launcherEndpoint := "https://openshell.openshell.svc.cluster.local:8080"
+	mtlsSecret := "openshell-client-tls"
+	if gwCfg != nil {
+		launcherImage = gwCfg.Images.Launcher
+		launcherSA = gwCfg.Launcher.ServiceAccount
+		launcherEndpoint = gwCfg.Launcher.GatewayEndpoint
+		mtlsSecret = gwCfg.Secrets.MTLS
+	}
+
 	job := map[string]any{
 		"apiVersion": "batch/v1",
 		"kind":       "Job",
@@ -170,14 +199,14 @@ func newRemote(harnessDir string, gw gateway.Gateway, profileName, sandboxName s
 			"backoffLimit": 0,
 			"template": map[string]any{
 				"spec": map[string]any{
-					"serviceAccountName": "openshell-launcher",
+					"serviceAccountName": launcherSA,
 					"restartPolicy":      "Never",
 					"containers": []map[string]any{{
 						"name":            "launcher",
-						"image":           envOr("LAUNCHER_IMAGE", "ghcr.io/robbycochran/harness-openshell:launcher"),
+						"image":           launcherImage,
 						"imagePullPolicy": "Always",
 						"env": []map[string]any{
-							{"name": "GATEWAY_ENDPOINT", "value": "https://openshell.openshell.svc.cluster.local:8080"},
+							{"name": "GATEWAY_ENDPOINT", "value": launcherEndpoint},
 							{"name": "HOME", "value": "/tmp"},
 						},
 						"volumeMounts": []map[string]any{
@@ -190,7 +219,7 @@ func newRemote(harnessDir string, gw gateway.Gateway, profileName, sandboxName s
 					"volumes": []map[string]any{
 						{"name": "config", "configMap": map[string]any{"name": "sandbox-" + cfg.Name}},
 						{"name": "gws", "secret": map[string]any{"secretName": "openshell-gws", "optional": true}},
-						{"name": "gateway-mtls", "secret": map[string]any{"secretName": "openshell-client-tls"}},
+						{"name": "gateway-mtls", "secret": map[string]any{"secretName": mtlsSecret}},
 						{"name": "sandbox-env", "configMap": map[string]any{"name": "sandbox-" + cfg.Name + "-env", "optional": true}},
 					},
 				},
@@ -261,7 +290,7 @@ func newLocal(opts newLocalOpts) error {
 	providers, _ := gw.ProviderList()
 	if len(providers) == 0 {
 		status.Section("Registering providers")
-		if err := registerProviders(opts.harnessDir, gw, false); err != nil {
+		if err := registerProviders(opts.harnessDir, gw, false, opts.gwCfg); err != nil {
 			return fmt.Errorf("provider registration failed: %w", err)
 		}
 	}
