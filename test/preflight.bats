@@ -1,11 +1,10 @@
 #!/usr/bin/env bats
-# Tests for lib/providers.py preflight check.
+# Tests for preflight check (Go implementation).
 #
 # Stubs external CLIs (openshell, kubectl, gcloud, podman, curl, gws)
 # and uses temp TOML files to test every configuration path.
 
 REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-PROVIDERS_PY="$REPO_ROOT/bin/scripts/lib/providers.py"
 
 setup() {
   TEST_TMPDIR="$(mktemp -d)"
@@ -18,7 +17,7 @@ setup() {
   unset OPENSHELL_GATEWAY OPENSHELL_NAMESPACE OPENSHELL_CLI
   unset GOOGLE_APPLICATION_CREDENTIALS
 
-  # Point providers.py at temp TOML files
+  # Point preflight at temp TOML files
   export PROVIDERS_TOML="$TEST_TMPDIR/providers.toml"
   export CONFIG_TOML="$TEST_TMPDIR/openshell.toml"
 
@@ -51,44 +50,19 @@ STUB
 }
 
 run_preflight() {
-  if [[ "${USE_GO:-}" == "true" ]]; then
-    # Run via the Go harness binary
-    local harness="$REPO_ROOT/harness"
-    local cmd="${1:-check}"
-    shift 2>/dev/null || true
-    case "$cmd" in
-      check)
-        PROVIDERS_TOML="$PROVIDERS_TOML" CONFIG_TOML="$CONFIG_TOML" \
-          "$harness" preflight "$@"
-        ;;
-      available|names)
-        PROVIDERS_TOML="$PROVIDERS_TOML" CONFIG_TOML="$CONFIG_TOML" \
-          "$harness" preflight "$cmd"
-        ;;
-    esac
-  else
-    # Run via Python (original)
-    python3 -c "
-import sys, os
-sys.path.insert(0, '$REPO_ROOT/bin/scripts/lib')
-os.chdir('$TEST_TMPDIR')
-
-from pathlib import Path
-import providers
-providers.PROVIDERS_TOML = Path('$PROVIDERS_TOML')
-providers.CONFIG_TOML = Path('$CONFIG_TOML')
-providers.CLI = os.environ.get('OPENSHELL_CLI', 'openshell')
-
-cmd = sys.argv[1] if len(sys.argv) > 1 else 'check'
-strict = '--strict' in sys.argv
-if cmd == 'check':
-    providers.cmd_check(strict=strict)
-elif cmd == 'available':
-    providers.cmd_available()
-elif cmd == 'names':
-    providers.cmd_names()
-" "$@"
-  fi
+  local harness="$REPO_ROOT/harness"
+  local cmd="${1:-check}"
+  shift 2>/dev/null || true
+  case "$cmd" in
+    check)
+      PROVIDERS_TOML="$PROVIDERS_TOML" CONFIG_TOML="$CONFIG_TOML" \
+        "$harness" preflight "$@"
+      ;;
+    available|names)
+      PROVIDERS_TOML="$PROVIDERS_TOML" CONFIG_TOML="$CONFIG_TOML" \
+        "$harness" preflight "$cmd"
+      ;;
+  esac
 }
 
 # ── ENV input tests ──────────────────────────────────────────────────

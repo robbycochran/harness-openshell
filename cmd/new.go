@@ -12,7 +12,6 @@ import (
 	"github.com/robbycochran/harness-openshell/internal/gateway"
 	"github.com/robbycochran/harness-openshell/internal/k8s"
 	"github.com/robbycochran/harness-openshell/internal/profile"
-	"github.com/robbycochran/harness-openshell/internal/runner"
 	"github.com/robbycochran/harness-openshell/internal/status"
 	"github.com/spf13/cobra"
 )
@@ -47,10 +46,7 @@ func NewNewCmd(harnessDir, cli string) *cobra.Command {
 				profileName: profileName,
 				sandboxName: sandboxName,
 				noTTY:       noTTY,
-				runScript: func(name string, args ...string) error {
-					return runner.RunScript(harnessDir, name, args...)
-				},
-				retrySleep: 5 * time.Second,
+				retrySleep:  5 * time.Second,
 			})
 		},
 	}
@@ -71,7 +67,6 @@ type newLocalOpts struct {
 	profileName string
 	sandboxName string
 	noTTY       bool
-	runScript   func(name string, args ...string) error
 	retrySleep  time.Duration
 }
 
@@ -236,7 +231,7 @@ func newLocal(opts newLocalOpts) error {
 	// 1. Ensure gateway
 	if opts.ensureLocal {
 		fmt.Println("=== Ensuring local gateway ===")
-		if err := opts.runScript("deploy.sh", "--local"); err != nil {
+		if err := deployLocal(gw); err != nil {
 			return fmt.Errorf("deploy failed: %w", err)
 		}
 	} else {
@@ -249,7 +244,7 @@ func newLocal(opts newLocalOpts) error {
 	providers, _ := gw.ProviderList()
 	if len(providers) == 0 {
 		status.Section("Registering providers")
-		if err := opts.runScript("providers.sh"); err != nil {
+		if err := registerProviders(opts.harnessDir, gw, false); err != nil {
 			return fmt.Errorf("provider registration failed: %w", err)
 		}
 	}
