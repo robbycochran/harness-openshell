@@ -24,9 +24,7 @@ func NewTeardownCmd(harnessDir, cli string) *cobra.Command {
 		Short: "Tear down sandboxes, providers, or k8s resources",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !sandboxes && !providers && !k8sFlag {
-				sandboxes = true
-				providers = true
-				k8sFlag = true
+				return fmt.Errorf("specify at least one of --sandboxes, --providers, or --k8s")
 			}
 
 			gw := gateway.New(cli)

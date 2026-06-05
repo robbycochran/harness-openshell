@@ -115,10 +115,10 @@ func TestBuildSandboxEnv(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 lines, got %d: %q", len(lines), env)
 	}
-	if lines[0] != "export APPLE=a" {
-		t.Errorf("first line = %q (should be sorted)", lines[0])
+	if lines[0] != `export APPLE="a"` {
+		t.Errorf("first line = %q (should be sorted and quoted)", lines[0])
 	}
-	if lines[1] != "export ZEBRA=z" {
+	if lines[1] != `export ZEBRA="z"` {
 		t.Errorf("second line = %q", lines[1])
 	}
 }
@@ -145,7 +145,7 @@ func TestStageHarnessDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading sandbox.env: %v", err)
 	}
-	if !strings.Contains(string(data), "export FOO=bar") {
+	if !strings.Contains(string(data), `export FOO="bar"`) {
 		t.Errorf("sandbox.env = %q", string(data))
 	}
 }

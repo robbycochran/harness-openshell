@@ -43,7 +43,7 @@ func (c *Config) BuildSandboxEnv() string {
 	sort.Strings(keys)
 	var b strings.Builder
 	for _, k := range keys {
-		fmt.Fprintf(&b, "export %s=%s\n", k, c.Env[k])
+		fmt.Fprintf(&b, "export %s=%q\n", k, c.Env[k])
 	}
 	return b.String()
 }
@@ -69,7 +69,7 @@ func StageHarnessDir(cfg *Config, harnessDir string) error {
 
 	envContent := cfg.BuildSandboxEnv()
 	if envContent != "" {
-		if err := os.WriteFile(filepath.Join(harnessDir, "sandbox.env"), []byte(envContent), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(harnessDir, "sandbox.env"), []byte(envContent), 0o600); err != nil {
 			return fmt.Errorf("writing sandbox.env: %w", err)
 		}
 		lines := strings.Count(envContent, "\n")

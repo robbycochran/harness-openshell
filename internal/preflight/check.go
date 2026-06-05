@@ -132,7 +132,7 @@ func RunCheck(harnessDir string, gw gateway.Gateway, strict bool) error {
 			if gw.ProviderGet(p.Name) == nil {
 				status.OK(p.Name)
 			} else {
-				status.Failf("%s: not registered — run ./setup-providers.sh", p.Name)
+				status.Failf("%s: not registered — run: harness providers", p.Name)
 				hasFailures = true
 			}
 		}
