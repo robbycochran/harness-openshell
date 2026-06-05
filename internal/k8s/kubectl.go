@@ -32,7 +32,7 @@ type Runner interface {
 	RunKubectlOpts(ctx context.Context, opts KubectlOpts) (string, error)
 	RunKubectlQuiet(ctx context.Context, args ...string) error
 	RunKubectlPassthrough(ctx context.Context, args ...string) error
-	RunHelm(ctx context.Context, args ...string) (string, error)
+	RunHelm(ctx context.Context, args ...string) error
 	RunOC(ctx context.Context, args ...string) error
 	ApplyYAML(ctx context.Context, resources ...map[string]any) error
 	SecretExists(ctx context.Context, name string) bool
@@ -79,12 +79,11 @@ func (c *Client) RunKubectlOpts(ctx context.Context, opts KubectlOpts) (string, 
 		}
 
 		var stdout, stderr bytes.Buffer
+		cmd.Stderr = &stderr
 		if opts.Quiet {
 			cmd.Stdout = io.Discard
-			cmd.Stderr = io.Discard
 		} else {
 			cmd.Stdout = &stdout
-			cmd.Stderr = &stderr
 		}
 
 		lastErr = cmd.Run()
@@ -92,18 +91,20 @@ func (c *Client) RunKubectlOpts(ctx context.Context, opts KubectlOpts) (string, 
 			return strings.TrimSpace(stdout.String()), nil
 		}
 
-		errOutput := stderr.String() + lastErr.Error()
+		errOutput := stderr.String() + " " + lastErr.Error()
 		if !isTransient(errOutput) {
-			return "", fmt.Errorf("kubectl %s: %s", strings.Join(opts.Args, " "), strings.TrimSpace(stderr.String()))
+			return "", fmt.Errorf("kubectl %s: %s", strings.Join(args, " "), strings.TrimSpace(stderr.String()))
 		}
 
 		if attempt < 2 {
 			delay := time.Duration(1<<uint(attempt)) * time.Second
 			time.Sleep(delay)
 			if opts.Stdin != nil {
-				if seeker, ok := opts.Stdin.(io.Seeker); ok {
-					seeker.Seek(0, io.SeekStart)
+				seeker, ok := opts.Stdin.(io.Seeker)
+				if !ok {
+					return "", fmt.Errorf("kubectl %s: transient error but stdin is not seekable for retry: %s", strings.Join(opts.Args, " "), strings.TrimSpace(stderr.String()))
 				}
+				seeker.Seek(0, io.SeekStart)
 			}
 		}
 	}
@@ -130,7 +131,7 @@ func (c *Client) RunKubectlPassthrough(ctx context.Context, args ...string) erro
 	return cmd.Run()
 }
 
-func (c *Client) RunHelm(ctx context.Context, args ...string) (string, error) {
+func (c *Client) RunHelm(ctx context.Context, args ...string) error {
 	if c.namespace != "" && !containsFlag(args, "-n", "--namespace") {
 		args = append(args, "-n", c.namespace)
 	}
@@ -142,7 +143,7 @@ func (c *Client) RunHelm(ctx context.Context, args ...string) (string, error) {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	return "", cmd.Run()
+	return cmd.Run()
 }
 
 func (c *Client) RunOC(ctx context.Context, args ...string) error {
@@ -183,7 +184,7 @@ func (c *Client) GetSecretField(ctx context.Context, secretName, field string) (
 	if err != nil {
 		return nil, err
 	}
-	return decodeBase64(out)
+	return base64.StdEncoding.DecodeString(out)
 }
 
 func (c *Client) GetJSONPath(ctx context.Context, resource, jsonpath string) (string, error) {
@@ -213,10 +214,6 @@ func containsFlag(args []string, flags ...string) bool {
 		}
 	}
 	return false
-}
-
-func decodeBase64(s string) ([]byte, error) {
-	return base64.StdEncoding.DecodeString(s)
 }
 
 func DefaultNamespace() string {

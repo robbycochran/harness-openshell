@@ -108,18 +108,7 @@ func (c *CLI) ProviderList() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var names []string
-	for i, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if i == 0 || strings.TrimSpace(line) == "" {
-			continue // skip header
-		}
-		cleaned := ansiRE.ReplaceAllString(line, "")
-		fields := strings.Fields(cleaned)
-		if len(fields) > 0 {
-			names = append(names, fields[0])
-		}
-	}
-	return names, nil
+	return parseFirstColumn(out), nil
 }
 
 func (c *CLI) InferenceRemove() error {
@@ -139,18 +128,7 @@ func (c *CLI) SandboxList() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var names []string
-	for i, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if i == 0 || strings.TrimSpace(line) == "" {
-			continue
-		}
-		cleaned := ansiRE.ReplaceAllString(line, "")
-		fields := strings.Fields(cleaned)
-		if len(fields) > 0 {
-			names = append(names, fields[0])
-		}
-	}
-	return names, nil
+	return parseFirstColumn(out), nil
 }
 
 func (c *CLI) GatewayList() ([]GatewayInfo, error) {
@@ -243,14 +221,18 @@ func (c *CLI) SandboxConnect(name string) error {
 	return syscall.Exec(path, args, os.Environ())
 }
 
-func (c *CLI) SandboxUpload(name, localDir, remotePath string) error {
-	return c.passthrough("sandbox", "upload", name, localDir, remotePath, "--no-git-ignore")
-}
-
-func (c *CLI) SandboxExec(name string, command ...string) error {
-	args := []string{"sandbox", "exec", "--name", name, "--"}
-	args = append(args, command...)
-	return c.passthrough(args...)
+func parseFirstColumn(out []byte) []string {
+	var names []string
+	for i, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if i == 0 || strings.TrimSpace(line) == "" {
+			continue
+		}
+		cleaned := ansiRE.ReplaceAllString(line, "")
+		if fields := strings.Fields(cleaned); len(fields) > 0 {
+			names = append(names, fields[0])
+		}
+	}
+	return names
 }
 
 // passthrough runs the CLI with stdin/stdout/stderr connected.

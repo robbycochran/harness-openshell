@@ -30,6 +30,9 @@ func NewNewCmd(harnessDir, cli string) *cobra.Command {
 		Short: "Create a new sandbox",
 		Long:  "Deploy gateway and providers if needed, then create a sandbox from a profile.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if local && remote {
+				return fmt.Errorf("--local and --remote are mutually exclusive")
+			}
 			if len(args) > 0 && sandboxName == "" {
 				sandboxName = args[0]
 			}
@@ -278,10 +281,11 @@ func newLocal(opts newLocalOpts) error {
 	}
 
 	// 5. Stage files
-	harnessUploadDir := "/tmp/openshell"
-	if err := os.RemoveAll(harnessUploadDir); err != nil {
-		return fmt.Errorf("cleaning staging dir: %w", err)
+	harnessUploadDir, err := os.MkdirTemp("", "harness-")
+	if err != nil {
+		return fmt.Errorf("creating staging dir: %w", err)
 	}
+	defer os.RemoveAll(harnessUploadDir)
 	if err := profile.StageHarnessDir(cfg, harnessUploadDir); err != nil {
 		return fmt.Errorf("staging files: %w", err)
 	}
@@ -320,5 +324,5 @@ func newLocal(opts newLocalOpts) error {
 		}
 		time.Sleep(opts.retrySleep)
 	}
-	return nil
+	return nil // unreachable but required by compiler
 }

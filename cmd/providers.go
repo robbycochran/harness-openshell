@@ -10,7 +10,6 @@ import (
 
 	"github.com/robbycochran/harness-openshell/internal/gateway"
 	"github.com/robbycochran/harness-openshell/internal/status"
-	"github.com/robbycochran/harness-openshell/internal/util"
 	"github.com/spf13/cobra"
 )
 
@@ -98,7 +97,7 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool) error 
 		project = readADCProject(adcPath)
 	}
 
-	if util.FileExists(adcPath) && project != "" {
+	if fileExists(adcPath) && project != "" {
 		if gw.ProviderGet("vertex-local") != nil {
 			if err := gw.ProviderCreate("vertex-local", "google-vertex-ai", gateway.ProviderCreateOpts{
 				FromADC: true,
@@ -117,7 +116,7 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool) error 
 			return fmt.Errorf("setting inference: %w", err)
 		}
 		status.OKf("inference: model %s", model)
-	} else if !util.FileExists(adcPath) {
+	} else if !fileExists(adcPath) {
 		status.Infof("vertex-local: skipped (no ADC file at %s)", adcPath)
 	} else {
 		status.Info("vertex-local: skipped (no project ID — set ANTHROPIC_VERTEX_PROJECT_ID)")
@@ -188,6 +187,11 @@ func extractYAMLID(path string) string {
 		}
 	}
 	return ""
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func readADCProject(path string) string {

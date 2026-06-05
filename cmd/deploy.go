@@ -48,7 +48,12 @@ func NewDeployCmd(harnessDir, cli string) *cobra.Command {
 	return cmd
 }
 
-func deployRemote(harnessDir string, gw gateway.Gateway, kc, clusterRunner k8s.Runner) error {
+func deployRemote(harnessDir string, gw gateway.Gateway, kc, clusterRunner k8s.Runner) (retErr error) {
+	defer func() {
+		if retErr != nil {
+			fmt.Fprintf(os.Stderr, "\nDeploy failed. Clean up with: harness teardown --k8s\n")
+		}
+	}()
 	ctx := context.Background()
 	namespace := k8s.DefaultNamespace()
 
@@ -128,7 +133,7 @@ func deployRemote(harnessDir string, gw gateway.Gateway, kc, clusterRunner k8s.R
 	if sps := os.Getenv("SANDBOX_PULL_SECRET"); sps != "" {
 		helmArgs = append(helmArgs, "--set", "server.sandboxImagePullSecrets[0].name="+sps)
 	}
-	if _, err := kc.RunHelm(ctx, helmArgs...); err != nil {
+	if err := kc.RunHelm(ctx, helmArgs...); err != nil {
 		return fmt.Errorf("helm install failed: %w", err)
 	}
 
@@ -166,7 +171,10 @@ func deployRemote(harnessDir string, gw gateway.Gateway, kc, clusterRunner k8s.R
 	}
 
 	// Extract mTLS certs
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("determining home directory: %w", err)
+	}
 	mtlsDir := filepath.Join(home, ".config", "openshell", "gateways", gatewayName, "mtls")
 	for _, field := range []string{"ca.crt", "tls.crt", "tls.key"} {
 		data, err := kc.GetSecretField(ctx, "openshell-client-tls", field)
@@ -178,21 +186,26 @@ func deployRemote(harnessDir string, gw gateway.Gateway, kc, clusterRunner k8s.R
 		}
 	}
 
-	gw.GatewaySelect(gatewayName)
+	if err := gw.GatewaySelect(gatewayName); err != nil {
+		return fmt.Errorf("selecting gateway %s: %w", gatewayName, err)
+	}
 	status.OKf("%s registered (certs from cluster)", gatewayName)
 
 	// Wait for gateway to be reachable
 	fmt.Print("  Waiting for gateway...")
-	for i := range 30 {
+	var gwReachable bool
+	for range 30 {
 		if gw.InferenceGet() == nil {
+			gwReachable = true
 			status.OK("reachable")
 			break
 		}
 		time.Sleep(2 * time.Second)
 		fmt.Print(".")
-		if i == 29 {
-			status.Fail("timed out (try: openshell inference get)")
-		}
+	}
+	if !gwReachable {
+		fmt.Println()
+		return fmt.Errorf("gateway not reachable after 60s (try: openshell inference get)")
 	}
 
 	fmt.Println()

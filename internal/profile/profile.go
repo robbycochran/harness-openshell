@@ -9,10 +9,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/BurntSushi/toml"
 )
 
-// ProviderChecker checks if a provider is registered. Accepts gateway.ProviderManager
-// or any type with a ProviderGet method — decouples profile from the full Gateway interface.
+// ProviderChecker checks if a provider is registered.
 type ProviderChecker interface {
 	ProviderGet(name string) error
 }
@@ -44,9 +44,30 @@ func (c *Config) BuildSandboxEnv() string {
 	sort.Strings(keys)
 	var b strings.Builder
 	for _, k := range keys {
-		fmt.Fprintf(&b, "export %s=%s\n", k, c.Env[k])
+		fmt.Fprintf(&b, "export %s=%q\n", k, c.Env[k])
 	}
 	return b.String()
+}
+
+// Parse reads a profile TOML file and returns a Config with defaults applied.
+func Parse(harnessDir, name string) (*Config, error) {
+	path := filepath.Join(harnessDir, "profiles", name+".toml")
+	return ParseFile(path)
+}
+
+// ParseFile reads a profile TOML file by path.
+func ParseFile(path string) (*Config, error) {
+	var cfg Config
+	if _, err := toml.DecodeFile(path, &cfg); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	if cfg.Name == "" {
+		cfg.Name = "agent"
+	}
+	if cfg.Command == "" {
+		cfg.Command = "claude --bare"
+	}
+	return &cfg, nil
 }
 
 // ValidateProviders checks which profile providers are registered on the
@@ -70,7 +91,7 @@ func StageHarnessDir(cfg *Config, harnessDir string) error {
 
 	envContent := cfg.BuildSandboxEnv()
 	if envContent != "" {
-		if err := os.WriteFile(filepath.Join(harnessDir, "sandbox.env"), []byte(envContent), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(harnessDir, "sandbox.env"), []byte(envContent), 0o600); err != nil {
 			return fmt.Errorf("writing sandbox.env: %w", err)
 		}
 		lines := strings.Count(envContent, "\n")

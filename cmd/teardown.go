@@ -24,9 +24,7 @@ func NewTeardownCmd(harnessDir, cli string) *cobra.Command {
 		Short: "Tear down sandboxes, providers, or k8s resources",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !sandboxes && !providers && !k8sFlag {
-				sandboxes = true
-				providers = true
-				k8sFlag = true
+				return fmt.Errorf("specify at least one of --sandboxes, --providers, or --k8s")
 			}
 
 			gw := gateway.New(cli)
@@ -149,7 +147,7 @@ func teardownK8s(gw gateway.Gateway, kc, clusterRunner k8s.Runner) {
 
 	// Helm release
 	status.Section("Helm release")
-	if _, err := kc.RunHelm(ctx, "uninstall", "openshell"); err == nil {
+	if err := kc.RunHelm(ctx, "uninstall", "openshell"); err == nil {
 		status.Info("Uninstalled")
 	} else {
 		status.Info("Not installed")
