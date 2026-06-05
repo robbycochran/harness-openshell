@@ -125,7 +125,7 @@ func deployRemote(harnessDir string, gw gateway.Gateway, kc, clusterRunner k8s.R
 	helmArgs := []string{
 		"upgrade", "--install", "openshell", chartOCI,
 		"--version", chartVersion,
-		"--values", filepath.Join(harnessDir, "gateways", "ocp", "values.yaml"),
+		"--values", filepath.Join(harnessDir, "gateways", "ocp", "helm", "values.yaml"),
 		"--set", "server.sandboxImage=" + sandboxImage,
 		"--set", "pkiInitJob.serverDnsNames[0]=" + routeHost,
 	}
