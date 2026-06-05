@@ -16,6 +16,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	sccPrivilegedSAs = []string{"openshell", "openshell-sandbox", "default"}
+	secretNames      = []string{"openshell-gws", "openshell-atlassian"}
+)
+
 func NewDeployCmd(harnessDir, cli string) *cobra.Command {
 	var (
 		local      bool
@@ -61,7 +66,7 @@ func deployRemote(harnessDir string, gw gateway.Gateway, kc, clusterRunner k8s.R
 	if chartVersion == "" {
 		cfg, _ := preflight.LoadConfig(filepath.Join(harnessDir, "openshell.toml"))
 		if cfg != nil {
-			chartVersion = cfg.ChartVersion
+			chartVersion = cfg.Upstream.ChartVersion
 		}
 	}
 	if chartVersion == "" {
@@ -94,7 +99,7 @@ func deployRemote(harnessDir string, gw gateway.Gateway, kc, clusterRunner k8s.R
 
 	// Step 3: OpenShift SCCs (best-effort — oc may not exist on non-OpenShift)
 	status.Step(3, "Granting OpenShift SCCs")
-	for _, sa := range []string{"openshell", "openshell-sandbox", "default"} {
+	for _, sa := range sccPrivilegedSAs {
 		kc.RunOC(ctx, "adm", "policy", "add-scc-to-user", "privileged", "-z", sa, "-n", namespace)
 	}
 	kc.RunOC(ctx, "adm", "policy", "add-scc-to-user", "anyuid", "-z", "openshell", "-n", namespace)
@@ -109,10 +114,7 @@ func deployRemote(harnessDir string, gw gateway.Gateway, kc, clusterRunner k8s.R
 
 	// Step 4: Helm install
 	status.Step(4, "Deploying gateway via Helm")
-	sandboxImage := os.Getenv("SANDBOX_IMAGE")
-	if sandboxImage == "" {
-		sandboxImage = "quay.io/rcochran/openshell:sandbox"
-	}
+	sandboxImage := envOr("SANDBOX_IMAGE", "quay.io/rcochran/openshell:sandbox")
 
 	appsDomain, err := clusterRunner.GetJSONPath(ctx, "ingresses.config.openshift.io/cluster", "{.spec.domain}")
 	if err != nil || appsDomain == "" {
@@ -152,10 +154,7 @@ func deployRemote(harnessDir string, gw gateway.Gateway, kc, clusterRunner k8s.R
 
 	// Step 6: CLI gateway config
 	status.Step(6, "Configuring CLI gateway")
-	gatewayName := os.Getenv("GATEWAY_NAME")
-	if gatewayName == "" {
-		gatewayName = "openshell-remote-ocp"
-	}
+	gatewayName := envOr("GATEWAY_NAME", "openshell-remote-ocp")
 	gatewayURL := fmt.Sprintf("https://%s:443", routeHost)
 
 	// Remove existing gateways for this host
@@ -223,13 +222,11 @@ func deployLocal(gw gateway.Gateway) error {
 	}
 
 	status.Section("Container Runtime")
-	podmanPath, _ := exec.LookPath("podman")
-	if podmanPath == "" {
+	if _, err := exec.LookPath("podman"); err != nil {
 		status.Fail("Podman not found")
 		return fmt.Errorf("podman is required")
 	}
-	cmd := exec.Command("podman", "--version")
-	out, _ := cmd.Output()
+	out, _ := exec.Command("podman", "--version").Output()
 	status.OKf("Podman: %s", strings.TrimSpace(string(out)))
 
 	status.Section("Gateway")

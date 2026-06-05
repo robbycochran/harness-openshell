@@ -147,8 +147,8 @@ test_errors() {
     step "teardown (first)" "$HARNESS" teardown --sandboxes --providers
     step "teardown (second)" "$HARNESS" teardown --sandboxes --providers
   else
-    step "teardown (first)" "$HARNESS" teardown
-    step "teardown (second)" "$HARNESS" teardown
+    step "teardown (first)" "$HARNESS" teardown --sandboxes --providers --k8s
+    step "teardown (second)" "$HARNESS" teardown --sandboxes --providers --k8s
   fi
 
   echo ""

@@ -26,9 +26,10 @@ type Provider struct {
 }
 
 type Input struct {
-	Key    string `toml:"key"`
-	Kind   string `toml:"kind"`
-	Secret bool   `toml:"secret"`
+	Key     string `toml:"key"`
+	Kind    string `toml:"kind"`
+	Secret  bool   `toml:"secret"`
+	Sandbox bool   `toml:"sandbox"`
 }
 
 type ProvidersFile struct {
@@ -39,7 +40,6 @@ type ConfigFile struct {
 	Providers       []string       `toml:"providers"`
 	ProvidersCustom []string       `toml:"providers-custom"`
 	Upstream        UpstreamConfig `toml:"upstream"`
-	ChartVersion    string         `toml:"-"`
 }
 
 type UpstreamConfig struct {
@@ -62,7 +62,6 @@ func LoadConfig(path string) (*ConfigFile, error) {
 	if _, err := toml.DecodeFile(path, &cf); err != nil {
 		return nil, fmt.Errorf("reading %s: %w", path, err)
 	}
-	cf.ChartVersion = cf.Upstream.ChartVersion
 	return &cf, nil
 }
 
@@ -86,6 +85,31 @@ func EnabledProviders(all []Provider, config *ConfigFile) []Provider {
 	return result
 }
 
+// ProviderEnvVars returns environment variables marked with sandbox = true
+// for the named providers, resolved from the local environment. Only
+// includes env vars that are set.
+func ProviderEnvVars(providers []Provider, names []string) map[string]string {
+	wanted := make(map[string]bool, len(names))
+	for _, n := range names {
+		wanted[n] = true
+	}
+	env := make(map[string]string)
+	for _, p := range providers {
+		if !wanted[p.Name] {
+			continue
+		}
+		for _, inp := range p.Inputs {
+			if inp.Kind != "env" || !inp.Sandbox {
+				continue
+			}
+			if val := os.Getenv(inp.Key); val != "" {
+				env[inp.Key] = val
+			}
+		}
+	}
+	return env
+}
+
 func CheckInput(inp Input) (bool, string) {
 	switch inp.Kind {
 	case "env":
@@ -101,25 +125,23 @@ func CheckInput(inp Input) (bool, string) {
 
 	case "file":
 		path := expandPath(inp.Key)
-		if _, err := os.Stat(path); err == nil {
-			meta := FileMetadata(path)
-			if meta != nil && inp.Secret {
-				safe := pickKeys(meta, "project", "type")
-				masked := pickKeysExcept(meta, "project", "type")
-				parts := formatMeta(safe)
-				parts = append(parts, formatMeta(masked)...)
-				if len(parts) > 0 {
-					return true, fmt.Sprintf("✓ local file: %s (%s)", inp.Key, strings.Join(parts, ", "))
-				}
-			} else if meta != nil {
-				parts := formatMeta(meta)
-				if len(parts) > 0 {
-					return true, fmt.Sprintf("✓ local file: %s (%s)", inp.Key, strings.Join(parts, ", "))
-				}
-			}
+		if _, err := os.Stat(path); err != nil {
+			return false, fmt.Sprintf("✗ local file: %s not found", inp.Key)
+		}
+		meta := FileMetadata(path)
+		if meta == nil {
 			return true, fmt.Sprintf("✓ local file: %s", inp.Key)
 		}
-		return false, fmt.Sprintf("✗ local file: %s not found", inp.Key)
+		var parts []string
+		for k, v := range meta {
+			if v != "" {
+				parts = append(parts, fmt.Sprintf("%s=%s", k, v))
+			}
+		}
+		if len(parts) > 0 {
+			return true, fmt.Sprintf("✓ local file: %s (%s)", inp.Key, strings.Join(parts, ", "))
+		}
+		return true, fmt.Sprintf("✓ local file: %s", inp.Key)
 
 	case "check":
 		expanded := os.ExpandEnv(inp.Key)
@@ -193,40 +215,6 @@ func runQuiet(command string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return exec.CommandContext(ctx, "bash", "-c", command).Run() == nil
-}
-
-func pickKeys(m map[string]string, keys ...string) map[string]string {
-	result := make(map[string]string)
-	for _, k := range keys {
-		if v, ok := m[k]; ok && v != "" {
-			result[k] = v
-		}
-	}
-	return result
-}
-
-func pickKeysExcept(m map[string]string, except ...string) map[string]string {
-	skip := make(map[string]bool)
-	for _, k := range except {
-		skip[k] = true
-	}
-	result := make(map[string]string)
-	for k, v := range m {
-		if !skip[k] && v != "" {
-			result[k] = v
-		}
-	}
-	return result
-}
-
-func formatMeta(m map[string]string) []string {
-	var parts []string
-	for k, v := range m {
-		if v != "" {
-			parts = append(parts, fmt.Sprintf("%s=%s", k, v))
-		}
-	}
-	return parts
 }
 
 func loadEnabledProviders(harnessDir string) ([]Provider, error) {

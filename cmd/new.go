@@ -11,6 +11,7 @@ import (
 
 	"github.com/robbycochran/harness-openshell/internal/gateway"
 	"github.com/robbycochran/harness-openshell/internal/k8s"
+	"github.com/robbycochran/harness-openshell/internal/preflight"
 	"github.com/robbycochran/harness-openshell/internal/profile"
 	"github.com/robbycochran/harness-openshell/internal/status"
 	"github.com/spf13/cobra"
@@ -144,8 +145,8 @@ func newRemote(harnessDir string, gw gateway.Gateway, profileName, sandboxName s
 
 	// 3. Clean up old job (best-effort — may not exist)
 	jobName := "sandbox-" + cfg.Name
-	kc.RunKubectl(ctx, "delete", "job", jobName, "--force", "--grace-period=0")
-	kc.RunKubectl(ctx, "delete", "pod", "-l", "job-name="+jobName, "--force", "--grace-period=0")
+	kc.RunKubectl(ctx, "delete", "job", jobName, "--grace-period=30")
+	kc.RunKubectl(ctx, "delete", "pod", "-l", "job-name="+jobName, "--grace-period=30")
 
 	// 4. Apply launcher Job
 	job := map[string]any{
@@ -280,12 +281,30 @@ func newLocal(opts newLocalOpts) error {
 		status.Warn("no providers available — run: harness providers")
 	}
 
-	// 5. Stage files
-	harnessUploadDir, err := os.MkdirTemp("", "harness-")
+	// 5. Inject non-secret provider env vars into sandbox env
+	providersPath := filepath.Join(opts.harnessDir, "providers.toml")
+	if allProviders, err := preflight.LoadProviders(providersPath); err == nil {
+		providerEnv := preflight.ProviderEnvVars(allProviders, cfg.Providers)
+		if cfg.Env == nil {
+			cfg.Env = make(map[string]string)
+		}
+		for k, v := range providerEnv {
+			if _, exists := cfg.Env[k]; !exists {
+				cfg.Env[k] = v
+			}
+		}
+	}
+
+	// 6. Stage files
+	// The upload preserves the source dir name as a subdirectory at the destination.
+	// startup.sh expects files at /sandbox/.config/openshell/sandbox.env, so the
+	// staging dir must be named "openshell".
+	tmpParent, err := os.MkdirTemp("", "harness-")
 	if err != nil {
 		return fmt.Errorf("creating staging dir: %w", err)
 	}
-	defer os.RemoveAll(harnessUploadDir)
+	defer os.RemoveAll(tmpParent)
+	harnessUploadDir := filepath.Join(tmpParent, "openshell")
 	if err := profile.StageHarnessDir(cfg, harnessUploadDir); err != nil {
 		return fmt.Errorf("staging files: %w", err)
 	}
