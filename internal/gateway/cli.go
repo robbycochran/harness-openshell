@@ -243,16 +243,6 @@ func (c *CLI) SandboxConnect(name string) error {
 	return syscall.Exec(path, args, os.Environ())
 }
 
-func (c *CLI) SandboxUpload(name, localDir, remotePath string) error {
-	return c.passthrough("sandbox", "upload", name, localDir, remotePath, "--no-git-ignore")
-}
-
-func (c *CLI) SandboxExec(name string, command ...string) error {
-	args := []string{"sandbox", "exec", "--name", name, "--"}
-	args = append(args, command...)
-	return c.passthrough(args...)
-}
-
 // passthrough runs the CLI with stdin/stdout/stderr connected.
 func (c *CLI) passthrough(args ...string) error {
 	status.Cmd(c.bin, args...)

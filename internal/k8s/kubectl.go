@@ -184,7 +184,7 @@ func (c *Client) GetSecretField(ctx context.Context, secretName, field string) (
 	if err != nil {
 		return nil, err
 	}
-	return decodeBase64(out)
+	return base64.StdEncoding.DecodeString(out)
 }
 
 func (c *Client) GetJSONPath(ctx context.Context, resource, jsonpath string) (string, error) {
@@ -214,10 +214,6 @@ func containsFlag(args []string, flags ...string) bool {
 		}
 	}
 	return false
-}
-
-func decodeBase64(s string) ([]byte, error) {
-	return base64.StdEncoding.DecodeString(s)
 }
 
 func DefaultNamespace() string {

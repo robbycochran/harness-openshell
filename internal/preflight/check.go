@@ -208,7 +208,6 @@ func RunNames(harnessDir string) error {
 
 func runOutput(name string, args ...string) string {
 	cmd := exec.Command(name, args...)
-	cmd.Stderr = nil
 	out, err := cmd.Output()
 	if err != nil {
 		return ""

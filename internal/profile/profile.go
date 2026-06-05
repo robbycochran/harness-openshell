@@ -11,8 +11,7 @@ import (
 
 )
 
-// ProviderChecker checks if a provider is registered. Accepts gateway.ProviderManager
-// or any type with a ProviderGet method — decouples profile from the full Gateway interface.
+// ProviderChecker checks if a provider is registered.
 type ProviderChecker interface {
 	ProviderGet(name string) error
 }

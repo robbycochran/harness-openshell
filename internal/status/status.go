@@ -23,7 +23,6 @@ func OKf(format string, a ...any)    { fmt.Printf("  ✓ "+format+"\n", a...) }
 func Fail(msg string)                { fmt.Println("  ✗ " + msg) }
 func Failf(format string, a ...any)  { fmt.Printf("  ✗ "+format+"\n", a...) }
 func Warn(msg string)                { fmt.Println("  ! " + msg) }
-func Warnf(format string, a ...any)  { fmt.Printf("  ! "+format+"\n", a...) }
 func Info(msg string)                { fmt.Println("  - " + msg) }
 func Infof(format string, a ...any)  { fmt.Printf("  - "+format+"\n", a...) }
 func Detail(msg string)              { fmt.Println("    " + msg) }

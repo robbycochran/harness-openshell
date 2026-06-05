@@ -56,8 +56,6 @@ func (m *mockGW) ProviderProfileDelete(string) error                            
 func (m *mockGW) SettingsSet(string, string) error                              { return nil }
 func (m *mockGW) SandboxList() ([]string, error)                                { return nil, nil }
 func (m *mockGW) SandboxConnect(string) error                                   { return nil }
-func (m *mockGW) SandboxUpload(string, string, string) error                    { return nil }
-func (m *mockGW) SandboxExec(string, ...string) error                           { return nil }
 func (m *mockGW) GatewayAdd(string, string, bool) error { return nil }
 func (m *mockGW) GatewayRemove(name string) error {
 	if m.onGatewayRemove != nil {
