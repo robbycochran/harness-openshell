@@ -51,12 +51,9 @@ func TestDeployRemote_Success(t *testing.T) {
 		t.Errorf("missing CRD apply, calls: %v", clusterRunner.Calls)
 	}
 
-	// Verify RBAC applied
-	if !nsRunner.HasCall("apply-yaml ServiceAccount") {
-		t.Errorf("missing RBAC ServiceAccount, calls: %v", nsRunner.Calls)
-	}
-	if !nsRunner.HasCall("apply-yaml Role") {
-		t.Errorf("missing RBAC Role, calls: %v", nsRunner.Calls)
+	// Verify RBAC applied (via kubectl apply -f)
+	if !nsRunner.HasCall("apply -f") {
+		t.Errorf("missing RBAC apply, calls: %v", nsRunner.Calls)
 	}
 
 	// Verify Helm install
@@ -69,9 +66,9 @@ func TestDeployRemote_Success(t *testing.T) {
 		t.Errorf("missing rollout status, calls: %v", nsRunner.Calls)
 	}
 
-	// Verify Route applied
-	if !nsRunner.HasCall("apply-yaml Route") {
-		t.Errorf("missing Route apply, calls: %v", nsRunner.Calls)
+	// Verify Route applied (via kubectl apply -f)
+	if nsRunner.CallCount("apply -f") < 2 {
+		t.Errorf("expected 2 apply -f calls (RBAC + Route), got %d: %v", nsRunner.CallCount("apply -f"), nsRunner.Calls)
 	}
 }
 

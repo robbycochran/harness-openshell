@@ -6,18 +6,26 @@ import (
 	"path/filepath"
 
 	"github.com/robbycochran/harness-openshell/cmd"
+	"github.com/robbycochran/harness-openshell/internal/status"
 	"github.com/spf13/cobra"
 )
 
 func main() {
 	harnessDir := detectHarnessDir()
 
+	var verbose bool
+
 	root := &cobra.Command{
 		Use:           "harness",
 		Short:         "OpenShell Harness — deploy and manage AI agent sandboxes",
 		SilenceErrors: true,
 		SilenceUsage:  true,
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			status.Verbose = verbose
+		},
 	}
+
+	root.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Show kubectl/helm/openshell commands")
 
 	cli := os.Getenv("OPENSHELL_CLI")
 	if cli == "" {
@@ -31,7 +39,6 @@ func main() {
 		cmd.NewTeardownCmd(harnessDir, cli),
 		cmd.NewPreflightCmd(harnessDir, cli),
 		cmd.NewProvidersCmd(harnessDir, cli),
-		cmd.NewTestCmd(harnessDir),
 	)
 
 	if err := root.Execute(); err != nil {

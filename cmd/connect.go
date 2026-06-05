@@ -11,7 +11,7 @@ func NewConnectCmd(cli string) *cobra.Command {
 		Short: "Reconnect to a running sandbox",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			gw := gateway.NewCLI(cli)
+			gw := gateway.New(cli)
 			name := ""
 			if len(args) > 0 {
 				name = args[0]

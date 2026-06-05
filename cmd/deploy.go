@@ -28,13 +28,13 @@ func NewDeployCmd(harnessDir, cli string) *cobra.Command {
 		Short: "Deploy or verify the gateway",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if remote {
-				gw := gateway.NewCLI(cli)
+				gw := gateway.New(cli)
 				kc := k8s.New(kubeconfig, k8s.DefaultNamespace())
 				clusterRunner := k8s.New(kubeconfig, "")
 				return deployRemote(harnessDir, gw, kc, clusterRunner)
 			}
 			if local {
-				gw := gateway.NewCLI(cli)
+				gw := gateway.New(cli)
 				return deployLocal(gw)
 			}
 			return fmt.Errorf("specify --local or --remote")
@@ -97,39 +97,8 @@ func deployRemote(harnessDir string, gw gateway.Gateway, kc, clusterRunner k8s.R
 		"--clusterrole=cluster-admin",
 		"--serviceaccount=agent-sandbox-system:agent-sandbox-controller")
 
-	// RBAC for launcher
-	if err := kc.ApplyYAML(ctx,
-		map[string]any{
-			"apiVersion": "v1",
-			"kind":       "ServiceAccount",
-			"metadata":   map[string]any{"name": "openshell-launcher", "namespace": namespace},
-		},
-		map[string]any{
-			"apiVersion": "rbac.authorization.k8s.io/v1",
-			"kind":       "Role",
-			"metadata":   map[string]any{"name": "openshell-launcher", "namespace": namespace},
-			"rules": []map[string]any{{
-				"apiGroups": []string{""},
-				"resources": []string{"configmaps", "secrets"},
-				"verbs":     []string{"get", "list"},
-			}},
-		},
-		map[string]any{
-			"apiVersion": "rbac.authorization.k8s.io/v1",
-			"kind":       "RoleBinding",
-			"metadata":   map[string]any{"name": "openshell-launcher", "namespace": namespace},
-			"subjects": []map[string]any{{
-				"kind":      "ServiceAccount",
-				"name":      "openshell-launcher",
-				"namespace": namespace,
-			}},
-			"roleRef": map[string]any{
-				"kind":     "Role",
-				"name":     "openshell-launcher",
-				"apiGroup": "rbac.authorization.k8s.io",
-			},
-		},
-	); err != nil {
+	// RBAC for launcher (from deploy/rbac.yaml)
+	if err := kc.RunKubectlPassthrough(ctx, "apply", "-f", filepath.Join(harnessDir, "deploy", "rbac.yaml")); err != nil {
 		return fmt.Errorf("applying launcher RBAC: %w", err)
 	}
 
@@ -169,19 +138,10 @@ func deployRemote(harnessDir string, gw gateway.Gateway, kc, clusterRunner k8s.R
 		return fmt.Errorf("gateway rollout failed: %w", err)
 	}
 
-	// Step 5: Route
+	// Step 5: Route (from deploy/route.yaml)
 	status.Step(5, "Creating OpenShift route")
 	if err := kc.RunKubectlQuiet(ctx, "get", "route", "gateway"); err != nil {
-		kc.ApplyYAML(ctx, map[string]any{
-			"apiVersion": "route.openshift.io/v1",
-			"kind":       "Route",
-			"metadata":   map[string]any{"name": "gateway", "namespace": namespace},
-			"spec": map[string]any{
-				"tls": map[string]any{"termination": "passthrough"},
-				"to":  map[string]any{"kind": "Service", "name": "openshell"},
-				"port": map[string]any{"targetPort": "grpc"},
-			},
-		})
+		kc.RunKubectlPassthrough(ctx, "apply", "-f", filepath.Join(harnessDir, "deploy", "route.yaml"))
 	}
 	fmt.Printf("  Route: %s\n", routeHost)
 
