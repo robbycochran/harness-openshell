@@ -8,3 +8,7 @@
 
 [gateway]
 type = "local"
+
+[providers]
+enabled = ["github", "vertex-local", "atlassian"]
+custom = ["gws"]

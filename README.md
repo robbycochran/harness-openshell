@@ -1,51 +1,72 @@
 # OpenShell Harness
 
-A gateway harness for [OpenShell](https://github.com/NVIDIA/OpenShell). One command to a working AI agent sandbox — gateway deployed, providers registered, credentials validated, sandbox running.
+A thin orchestration wrapper around [OpenShell](https://github.com/NVIDIA/OpenShell) for deploying and managing AI agent sandboxes. The harness handles the multi-step setup that OpenShell leaves to the user — gateway deployment, provider registration, credential validation, and sandbox configuration — so that one command gets you from zero to a running sandbox.
 
-Without this tool, setting up a sandbox means manually deploying an OpenShell gateway (Helm install, mTLS cert extraction, SCC grants), manually registering providers with credentials scattered across env vars and files, and debugging when credentials expire or proxies misconfigure. The harness handles all of that.
+## Relationship to OpenShell
 
-## What it does
+The harness wraps `openshell`, it doesn't replace it. Every operation delegates to the OpenShell CLI. Users can drop to raw `openshell` commands at any time.
 
-The harness wraps `openshell` — it doesn't replace it. It adds orchestration, validation, and configuration management across three domains:
+The harness exists to bridge gaps in OpenShell's current workflow:
 
-| Domain | What | Config |
-|--------|------|--------|
-| **Infrastructure** | Deploy the gateway (local Podman or remote OpenShift), Helm, mTLS, RBAC | `openshell.toml` |
-| **Providers** | Register credential providers (Vertex AI, GitHub, Atlassian), validate inputs | `providers.toml` |
-| **Sandbox** | Create sandboxes from profiles, stage files, connect | `profiles/*.toml` |
+- **Gateway deployment** — OpenShell provides the gateway binary and Helm chart but not the orchestration to deploy it (namespace setup, CRDs, SCCs on OpenShift, mTLS cert extraction, Helm install with correct values). The harness automates this for both local (Podman) and remote (OpenShift) targets.
 
-Each sandbox gets:
-- Claude Code via Vertex AI (`inference.local` gateway routing)
-- Jira and Confluence via mcp-atlassian MCP server
-- Gmail, Calendar, Drive via gws CLI
-- GitHub via gh CLI
-- Network policy enforcement per sandbox
+- **Provider lifecycle** — OpenShell manages credentials once registered, but doesn't validate prerequisites, discover credentials from local tooling, or compose provider profiles with sandbox configuration. The harness adds preflight checks, credential discovery, and profile-driven provider selection.
 
-## Prerequisites
+- **Parity across targets** — a sandbox created locally via Podman should behave identically to one on OpenShift. The harness provides this parity by using the same profiles, provider catalog, and validation on both targets.
 
-- [OpenShell CLI](https://github.com/NVIDIA/OpenShell) (`openshell`)
-- Podman (local) or kubectl + helm (OpenShift)
-- `gcloud auth application-default login` (Vertex AI)
+As OpenShell matures, the harness should shrink. Every workaround tracks the upstream issue that would eliminate it (see [AGENTS.md](AGENTS.md)).
 
-Optional: `gws` CLI (Google Workspace), `bats` (tests)
+## Goals
+
+1. **One command to working sandbox.** `harness new` takes a developer from zero to a running sandbox — gateway deployed, providers registered, credentials validated.
+
+2. **Reproducible environments.** Profiles define exactly what a sandbox needs. The same profile produces the same environment regardless of who runs it or where.
+
+3. **Credential visibility.** Preflight checks validate credentials locally before registration. Provider health checks verify they work end-to-end inside the sandbox.
+
+4. **Clean separation of concerns.** Infrastructure config, provider management, and sandbox profiles are independent. Changing your Jira token doesn't require editing sandbox profiles. Switching clusters doesn't require re-registering providers.
+
+5. **Thin wrapper, not a platform.** Orchestration and validation on top of OpenShell. No reimplementation of sandbox runtime, network policy, or credential injection.
+
+6. **Image-first, no host mounts.** Sandboxes boot from container images with tools baked in. Files are uploaded, not bind-mounted. This is deliberate — host-mounted workflows break parity between local and remote targets, bypass credential isolation, and create implicit dependencies on the host filesystem. If it doesn't work on OpenShift, it shouldn't work locally either. The sandbox interacts with the outside world through providers — git commits, PR reviews, Jira comments, email — not by writing files that get pulled back to the host.
+
+## Three Domains
+
+| Domain | Question | Config | Commands |
+|--------|----------|--------|----------|
+| **Infrastructure** | How is the gateway deployed? | `openshell.toml` | `deploy`, `teardown --k8s` |
+| **Providers** | What credentials are available and valid? | `providers.toml` | `providers`, `preflight` |
+| **Sandbox** | What sandbox do I want? | `profiles/*.toml` | `new`, `connect` |
+
+Each domain has its own config, its own code boundary, and its own concerns. A sandbox profile says what providers a sandbox *wants*. The provider catalog says what *exists* and how to validate it. The infrastructure layer handles *where* it all runs.
 
 ## Quick Start
 
 ```bash
+# Authenticate with Google Cloud (Vertex AI inference)
+gcloud auth application-default login
+
 # Set credentials
 export GITHUB_TOKEN="ghp_..."
 export JIRA_API_TOKEN="..."
-export ANTHROPIC_VERTEX_PROJECT_ID="my-project"
 
-# Local — deploy gateway, register providers, create sandbox
+# Local (Podman gateway)
 harness new --local
 
-# OpenShift — same flow, remote cluster
+# Remote (OpenShift gateway)
 harness new --remote
 
-# Reconnect to a running sandbox
+# Reconnect
 harness connect
 ```
+
+## Prerequisites
+
+- [OpenShell CLI](https://github.com/NVIDIA/OpenShell) (`openshell`)
+- `gcloud auth application-default login` (Vertex AI)
+- Podman (local) or kubectl + helm (OpenShift)
+
+Optional: `gws` CLI (Google Workspace), `bats` (tests)
 
 ## Commands
 
@@ -63,16 +84,15 @@ harness providers [--force]
     Register providers with the gateway.
 
 harness preflight [--strict]
-    Check environment prerequisites (credentials, CLI tools, gateway).
+    Validate local environment prerequisites.
 
 harness teardown [--sandboxes] [--providers] [--k8s]
-    Tear down sandboxes, providers, or cluster resources.
-    At least one flag required.
+    Tear down resources. At least one flag required.
 ```
 
 ## Profiles
 
-Sandboxes are configured via TOML profiles:
+Sandboxes are configured via TOML profiles. A profile defines the sandbox shape — image, command, which providers to attach, and environment variables.
 
 ```toml
 # profiles/default.toml
@@ -83,19 +103,28 @@ providers = ["github", "vertex-local", "atlassian"]
 
 [env]
 ANTHROPIC_BASE_URL = "https://inference.local"
-JIRA_URL = "https://mysite.atlassian.net"
 ```
+
+Provider credentials and provider-specific config are provider concerns, not profile concerns. The profile just lists which providers the sandbox wants.
 
 Use a specific profile: `harness new --profile research`
 
-## Why a sandbox
+## Provider Catalog
 
-Compared to running Claude Code locally:
+`providers.toml` defines available providers and how to validate them:
 
-- **Credential isolation** — the sandbox never sees real API tokens (proxy-resolved placeholders)
-- **Network policy** — per-binary egress rules control which processes reach which hosts
-- **Reproducible environment** — pinned tool versions, same setup across machines and team members
-- **Team sharing** — OpenShift deployment with mTLS, shared gateway, per-user sandboxes
+```toml
+[[providers]]
+name = "atlassian"
+type = "openshell"
+description = "Jira and Confluence (Basic auth resolved by proxy)"
+inputs = [
+  { key = "JIRA_API_TOKEN", kind = "env", secret = true },
+  { key = "JIRA_URL", kind = "env" },
+]
+```
+
+Providers with `type = "openshell"` are registered with the gateway and managed by OpenShell's credential proxy. Providers with `type = "custom"` are workarounds for integrations OpenShell doesn't natively support yet — each tracks its upstream issue.
 
 ## Architecture
 
@@ -117,32 +146,40 @@ Your machine                      OpenShift cluster
                                 └──────────────────────────────┘
 ```
 
+Each sandbox gets credential isolation (proxy-resolved placeholders, the sandbox never sees real tokens), per-binary network policy enforcement, and a reproducible toolchain pinned in the container image.
+
 ## Project Layout
 
 | Path | Purpose |
 |------|---------|
 | `main.go`, `cmd/` | CLI commands (Go) |
 | `internal/gateway/` | OpenShell CLI wrapper (Gateway interface) |
-| `internal/k8s/` | kubectl/helm/oc runner with retry |
-| `internal/profile/` | Profile TOML parsing |
-| `internal/preflight/` | Provider prerequisite checks |
+| `internal/k8s/` | kubectl/helm/oc runner with retry and transient error handling |
+| `internal/profile/` | Profile TOML parsing and staging |
+| `internal/preflight/` | Provider prerequisite validation |
 | `profiles/` | Sandbox profiles (TOML) |
-| `providers.toml` | Provider catalog (inputs, prerequisites) |
-| `sandbox/` | Sandbox image (Dockerfile, startup, policy, CLAUDE.md) |
+| `providers.toml` | Provider catalog (inputs, prerequisites, upstream tracking) |
+| `sandbox/` | Sandbox container image (Dockerfile, startup, policy, agent instructions) |
 | `sandbox/launcher/` | In-cluster launcher for OCP sandboxes |
-| `sandbox/profiles/` | OpenShell provider type profiles (YAML) |
-| `deploy/` | K8s manifests (RBAC, route) |
+| `sandbox/profiles/` | OpenShell provider type profiles (YAML, imported into gateway) |
+| `deploy/` | K8s manifests (RBAC, Route) |
 | `test/` | Tests (bats preflight, test-flow.sh integration) |
+
+## Future Direction
+
+- **Proto-based profiles** — align profile schema with OpenShell's proto types (`SandboxSpec`, `ProviderProfile`) for compile-time upstream compatibility. See [proto_migration.md](proto_migration.md).
+- **Gateway configs** — per-target deployment configs (`gateways/ocp/`, `gateways/kind/`) replacing hardcoded deploy logic. See [docs/design.md](docs/design.md).
+- **Direct gRPC** — replace CLI exec with gRPC calls to the gateway, eliminating output parsing. The Gateway interface already abstracts this swap.
+- **Shrink** — as OpenShell adds native support for GWS credentials, provider config injection, and in-cluster sandbox creation, remove the corresponding harness workarounds.
 
 ## Testing
 
 ```bash
 make validate            # full matrix: {bash,go} x {podman,ocp}
-make test                # build images + test
-bats test/preflight.bats # 29 preflight unit tests
 go test ./...            # Go unit tests
+bats test/preflight.bats # 29 preflight unit tests
 ```
 
-## Design
+## Contributing
 
-The harness is a thin wrapper that should shrink over time. As OpenShell adds native support for features the harness currently bridges (GWS credentials, provider config injection, in-cluster sandbox creation), the custom code gets replaced by upstream. See [AGENTS.md](AGENTS.md) for workaround tracking and [docs/design.md](docs/design.md) for the full design document.
+See [AGENTS.md](AGENTS.md) for coding guidelines, project principles, and workaround tracking.

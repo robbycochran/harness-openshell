@@ -14,7 +14,7 @@ func TestTeardownK8s_NamespaceNotFound(t *testing.T) {
 	clusterRunner.Errors["namespace-exists"] = fmt.Errorf("not found")
 
 	gw := &mockGW{}
-	teardownK8s(gw, kc, clusterRunner)
+	teardownK8s(gw, nil, kc, clusterRunner)
 
 	if clusterRunner.HasCall("delete") {
 		t.Error("should not attempt deletes when namespace does not exist")
@@ -34,7 +34,7 @@ func TestTeardownK8s_FullCleanup(t *testing.T) {
 		onGatewayRemove: func(name string) { deletedGateways = append(deletedGateways, name) },
 	}
 
-	teardownK8s(gw, kc, clusterRunner)
+	teardownK8s(gw, nil, kc, clusterRunner)
 
 	// Should helm uninstall
 	if !kc.HasCall("helm uninstall") {

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -47,7 +48,10 @@ func NewTeardownCmd(harnessDir, cli string) *cobra.Command {
 			}
 			if k8sFlag {
 				ns := k8s.DefaultNamespace()
-				teardownK8s(gw, k8s.New("", ns), k8s.New("", ""))
+				// Load OCP gateway config for SCC/secret names; fall back to defaults
+				gwDir := filepath.Join(harnessDir, "gateways", "ocp")
+				gwCfg, _ := gateway.LoadConfig(gwDir)
+				teardownK8s(gw, gwCfg, k8s.New("", ns), k8s.New("", ""))
 			}
 
 			status.Done("Done.")
@@ -135,9 +139,25 @@ func teardownProviders(gw gateway.Gateway, activeGW string) error {
 	return nil
 }
 
-func teardownK8s(gw gateway.Gateway, kc, clusterRunner k8s.Runner) {
+func teardownK8s(gw gateway.Gateway, gwCfg *gateway.GatewayConfig, kc, clusterRunner k8s.Runner) {
 	ctx := context.Background()
 	namespace := k8s.DefaultNamespace()
+
+	// Resolve SCC SAs and secret names from config, or use defaults
+	sccSAs := []string{"openshell", "openshell-sandbox", "default"}
+	sccAnyuid := []string{"openshell"}
+	secrets := []string{"openshell-gws", "openshell-atlassian"}
+	if gwCfg != nil {
+		if len(gwCfg.OCP.SCCPrivileged) > 0 {
+			sccSAs = gwCfg.OCP.SCCPrivileged
+		}
+		if len(gwCfg.OCP.SCCAnyuid) > 0 {
+			sccAnyuid = gwCfg.OCP.SCCAnyuid
+		}
+		if len(gwCfg.Secrets.Names) > 0 {
+			secrets = gwCfg.Secrets.Names
+		}
+	}
 
 	if !clusterRunner.NamespaceExists(ctx, namespace) {
 		status.Section("K8s")
@@ -165,17 +185,19 @@ func teardownK8s(gw gateway.Gateway, kc, clusterRunner k8s.Runner) {
 	// OpenShift SCCs
 	fmt.Println()
 	status.Section("OpenShift SCCs")
-	for _, sa := range sccPrivilegedSAs {
+	for _, sa := range sccSAs {
 		kc.RunOC(ctx, "adm", "policy", "remove-scc-from-user", "privileged", "-z", sa, "-n", namespace)
 	}
-	kc.RunOC(ctx, "adm", "policy", "remove-scc-from-user", "anyuid", "-z", "openshell", "-n", namespace)
+	for _, sa := range sccAnyuid {
+		kc.RunOC(ctx, "adm", "policy", "remove-scc-from-user", "anyuid", "-z", sa, "-n", namespace)
+	}
 	clusterRunner.RunKubectl(ctx, "delete", "clusterrolebinding", "agent-sandbox-admin")
 	status.Info("Cleared")
 
 	// Secrets
 	fmt.Println()
 	status.Section("K8s secrets")
-	for _, secret := range secretNames {
+	for _, secret := range secrets {
 		if _, err := kc.RunKubectl(ctx, "delete", "secret", secret); err == nil {
 			status.OKf("Deleted %s", secret)
 		} else {

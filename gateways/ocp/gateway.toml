@@ -4,7 +4,7 @@
 #   - oc login to the target cluster
 #   - KUBECONFIG set or default context pointing to OCP
 #
-# Addons applied:
+# Addons applied in order:
 #   - addons/rbac.yaml    — launcher ServiceAccount + Role
 #   - addons/route.yaml   — OpenShift Route for external access
 #   - SCC grants for openshell service accounts (via oc CLI)
@@ -13,9 +13,36 @@
 type = "remote"
 platform = "ocp"
 service = "route"
+name = "openshell-remote-ocp"
+mode = "launcher"
+
+[providers]
+enabled = ["github", "vertex-local", "atlassian"]
+custom = ["gws"]
+
+[chart]
+oci = "oci://ghcr.io/nvidia/openshell/helm-chart"
+version = "0.0.55"
+[chart.crd]
+url = "https://github.com/kubernetes-sigs/agent-sandbox/releases/latest/download/manifest.yaml"
 
 [helm]
 values = "values.yaml"
 
 [addons]
 manifests = ["addons/rbac.yaml", "addons/route.yaml"]
+
+[images]
+launcher = "ghcr.io/robbycochran/harness-openshell:launcher"
+
+[ocp]
+scc-privileged = ["openshell", "openshell-sandbox", "default"]
+scc-anyuid = ["openshell"]
+
+[secrets]
+names = ["openshell-gws", "openshell-atlassian"]
+mtls = "openshell-client-tls"
+
+[launcher]
+service-account = "openshell-launcher"
+gateway-endpoint = "https://openshell.openshell.svc.cluster.local:8080"

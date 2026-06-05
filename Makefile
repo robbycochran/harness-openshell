@@ -8,13 +8,18 @@
 ##   make test-ocp       # build + test OCP only
 
 REGISTRY      ?= ghcr.io/robbycochran/harness-openshell
+DEV_REGISTRY  ?= quay.io/rcochran/openshell
+DEV_TAG       := dev-$(shell git rev-parse --short HEAD)
 PLATFORM      := linux/amd64
 
 SANDBOX_IMAGE  := $(REGISTRY):sandbox
 LAUNCHER_IMAGE := $(REGISTRY):launcher
+DEV_SANDBOX_IMAGE  := $(DEV_REGISTRY):$(DEV_TAG)-sandbox
+DEV_LAUNCHER_IMAGE := $(DEV_REGISTRY):$(DEV_TAG)-launcher
 
 .PHONY: cli sandbox push-sandbox cli-launcher launcher push-launcher \
-        vet lint test-unit test test-local test-ocp test-all validate clean help
+        vet lint test-unit test test-local test-ocp test-all validate \
+        dev-sandbox dev-launcher validate-dev clean help
 
 ## ── CLI ──────────────────────────────────────────────────────────────
 
@@ -102,6 +107,45 @@ validate: cli sandbox push-launcher
 	@echo ""
 	@echo "=== Integration: OCP ==="
 	./test/test-flow.sh ocp --full
+
+## Dev validation: unit tests + bats + build images + full integration matrix.
+## Builds sandbox + launcher to DEV_REGISTRY (quay.io/rcochran/openshell), runs every flow.
+## Requires: openshell gateway running locally, OCP cluster via KUBECONFIG.
+dev-sandbox:
+	docker buildx build --platform linux/amd64,linux/arm64 -t $(DEV_SANDBOX_IMAGE) sandbox/ --push
+	@echo "Built and pushed: $(DEV_SANDBOX_IMAGE)"
+
+dev-launcher: cli-launcher
+	docker build --platform $(PLATFORM) -t $(DEV_LAUNCHER_IMAGE) sandbox/launcher/
+	docker push $(DEV_LAUNCHER_IMAGE)
+	@echo "Built and pushed: $(DEV_LAUNCHER_IMAGE)"
+
+validate-dev: cli dev-sandbox dev-launcher
+	@echo "=== Images ==="
+	@echo "  SANDBOX_IMAGE:  $(DEV_SANDBOX_IMAGE)"
+	@echo "  LAUNCHER_IMAGE: $(DEV_LAUNCHER_IMAGE)"
+	@echo ""
+	@echo "=== Unit tests ==="
+	CGO_ENABLED=0 go test ./...
+	cd sandbox/launcher && go test ./...
+	@echo ""
+	@echo "=== Bats ==="
+	bats test/preflight.bats
+	@echo ""
+	@echo "=== Integration: local (quick) ==="
+	SANDBOX_IMAGE=$(DEV_SANDBOX_IMAGE) ./test/test-flow.sh local
+	@echo ""
+	@echo "=== Integration: local (full) ==="
+	SANDBOX_IMAGE=$(DEV_SANDBOX_IMAGE) ./test/test-flow.sh local --full
+	@echo ""
+	@echo "=== Integration: local CI profile (no providers) ==="
+	./test/test-flow.sh local --full --no-providers --profile=ci
+	@echo ""
+	@echo "=== Integration: OCP (quick) ==="
+	SANDBOX_IMAGE=$(DEV_SANDBOX_IMAGE) LAUNCHER_IMAGE=$(DEV_LAUNCHER_IMAGE) ./test/test-flow.sh ocp
+	@echo ""
+	@echo "=== Integration: OCP (full) ==="
+	SANDBOX_IMAGE=$(DEV_SANDBOX_IMAGE) LAUNCHER_IMAGE=$(DEV_LAUNCHER_IMAGE) ./test/test-flow.sh ocp --full
 
 ## ── Convenience targets ───────────────────────────────────────────────
 

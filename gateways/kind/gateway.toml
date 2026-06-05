@@ -5,12 +5,21 @@
 #   - Cluster created: kind create cluster --name openshell
 #
 # Uses NodePort for access (no Ingress controller needed).
-# No user authentication — suitable for CI and local dev only.
+# Direct mode: no launcher Job, official providers only.
 
 [gateway]
 type = "remote"
 platform = "k8s"
 service = "nodeport"
+name = "openshell-kind"
+mode = "direct"
 
-[helm]
-# Chart defaults work for vanilla k8s — no values override needed.
+[providers]
+enabled = ["github", "vertex-local"]
+
+[chart]
+oci = "oci://ghcr.io/nvidia/openshell/helm-chart"
+version = "0.0.55"
+[chart.crd]
+url = "https://github.com/kubernetes-sigs/agent-sandbox/releases/latest/download/manifest.yaml"
+

@@ -226,7 +226,7 @@ test_ocp() {
       step "gateway reachable" "$CLI" inference get
     fi
   else
-    step "teardown" "$HARNESS" teardown
+    step "teardown" "$HARNESS" teardown --sandboxes --providers --k8s
     step "deploy" "$HARNESS" deploy --remote
   fi
 
@@ -250,7 +250,7 @@ test_ocp() {
   if $REUSE_GATEWAY; then
     step "teardown (sandboxes+providers)" "$HARNESS" teardown --sandboxes --providers
   else
-    step "teardown (clean)" "$HARNESS" teardown
+    step "teardown (clean)" "$HARNESS" teardown --sandboxes --providers --k8s
   fi
 }
 

@@ -16,11 +16,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	sccPrivilegedSAs = []string{"openshell", "openshell-sandbox", "default"}
-	secretNames      = []string{"openshell-gws", "openshell-atlassian"}
-)
-
 func NewDeployCmd(harnessDir, cli string) *cobra.Command {
 	var (
 		local      bool
@@ -29,190 +24,54 @@ func NewDeployCmd(harnessDir, cli string) *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "deploy [--local|--remote]",
+		Use:   "deploy [gateway]",
 		Short: "Deploy or verify the gateway",
+		Long:  "Deploy a gateway by name (e.g., local, ocp, kind). Reads configuration from gateways/<name>/gateway.toml.",
+		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if remote {
-				gw := gateway.New(cli)
-				kc := k8s.New(kubeconfig, k8s.DefaultNamespace())
-				clusterRunner := k8s.New(kubeconfig, "")
-				return deployRemote(harnessDir, gw, kc, clusterRunner)
+			gatewayName, err := resolveGatewayName(args, local, remote)
+			if err != nil {
+				return err
 			}
-			if local {
-				gw := gateway.New(cli)
+
+			gwDir := filepath.Join(harnessDir, "gateways", gatewayName)
+			gwCfg, err := gateway.LoadConfig(gwDir)
+			if err != nil {
+				return fmt.Errorf("loading gateway config %q: %w", gatewayName, err)
+			}
+
+			gw := gateway.New(cli)
+
+			if gwCfg.IsLocal() {
 				return deployLocal(gw)
 			}
-			return fmt.Errorf("specify --local or --remote")
+
+			kc := k8s.New(kubeconfig, k8s.DefaultNamespace())
+			clusterRunner := k8s.New(kubeconfig, "")
+			return deployFromConfig(harnessDir, gwCfg, gw, kc, clusterRunner)
 		},
 	}
 
-	cmd.Flags().BoolVar(&local, "local", false, "Verify local podman gateway")
-	cmd.Flags().BoolVar(&remote, "remote", false, "Deploy to OpenShift cluster")
+	cmd.Flags().BoolVar(&local, "local", false, "Alias for 'harness deploy local'")
+	cmd.Flags().BoolVar(&remote, "remote", false, "Alias for 'harness deploy ocp'")
 	cmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig (remote only)")
+	cmd.Flags().MarkHidden("local")
+	cmd.Flags().MarkHidden("remote")
 
 	return cmd
 }
 
-func deployRemote(harnessDir string, gw gateway.Gateway, kc, clusterRunner k8s.Runner) (retErr error) {
-	defer func() {
-		if retErr != nil {
-			fmt.Fprintf(os.Stderr, "\nDeploy failed. Clean up with: harness teardown --k8s\n")
-		}
-	}()
-	ctx := context.Background()
-	namespace := k8s.DefaultNamespace()
-
-	chartVersion := os.Getenv("OPENSHELL_CHART_VERSION")
-	if chartVersion == "" {
-		cfg, _ := preflight.LoadConfig(filepath.Join(harnessDir, "openshell.toml"))
-		if cfg != nil {
-			chartVersion = cfg.Upstream.ChartVersion
-		}
+func resolveGatewayName(args []string, local, remote bool) (string, error) {
+	if len(args) > 0 {
+		return args[0], nil
 	}
-	if chartVersion == "" {
-		chartVersion = "0.0.55"
+	if local {
+		return "local", nil
 	}
-	chartOCI := "oci://ghcr.io/nvidia/openshell/helm-chart"
-
-	fmt.Printf("OpenShell chart: %s\n", chartVersion)
-	if kbcfg := os.Getenv("KUBECONFIG"); kbcfg != "" {
-		fmt.Printf("KUBECONFIG: %s\n", kbcfg)
+	if remote {
+		return "ocp", nil
 	}
-	fmt.Println()
-
-	// Step 1: Namespace (idempotent — ignore AlreadyExists)
-	status.Step(1, "Creating namespace")
-	clusterRunner.RunKubectl(ctx, "create", "ns", namespace)
-	if _, err := clusterRunner.RunKubectl(ctx, "label", "ns", namespace,
-		"pod-security.kubernetes.io/enforce=privileged",
-		"pod-security.kubernetes.io/warn=privileged",
-		"--overwrite"); err != nil {
-		return fmt.Errorf("labeling namespace: %w", err)
-	}
-
-	// Step 2: Sandbox CRD
-	status.Step(2, "Installing Sandbox CRD")
-	if err := clusterRunner.RunKubectlPassthrough(ctx, "apply", "-f",
-		"https://github.com/kubernetes-sigs/agent-sandbox/releases/latest/download/manifest.yaml"); err != nil {
-		return fmt.Errorf("installing sandbox CRD: %w", err)
-	}
-
-	// Step 3: OpenShift SCCs (best-effort — oc may not exist on non-OpenShift)
-	status.Step(3, "Granting OpenShift SCCs")
-	for _, sa := range sccPrivilegedSAs {
-		kc.RunOC(ctx, "adm", "policy", "add-scc-to-user", "privileged", "-z", sa, "-n", namespace)
-	}
-	kc.RunOC(ctx, "adm", "policy", "add-scc-to-user", "anyuid", "-z", "openshell", "-n", namespace)
-	clusterRunner.RunKubectl(ctx, "create", "clusterrolebinding", "agent-sandbox-admin",
-		"--clusterrole=cluster-admin",
-		"--serviceaccount=agent-sandbox-system:agent-sandbox-controller")
-
-	// RBAC for launcher
-	if err := kc.RunKubectlPassthrough(ctx, "apply", "-f", filepath.Join(harnessDir, "gateways", "ocp", "addons", "rbac.yaml")); err != nil {
-		return fmt.Errorf("applying launcher RBAC: %w", err)
-	}
-
-	// Step 4: Helm install
-	status.Step(4, "Deploying gateway via Helm")
-	sandboxImage := envOr("SANDBOX_IMAGE", "ghcr.io/robbycochran/harness-openshell:sandbox")
-
-	appsDomain, err := clusterRunner.GetJSONPath(ctx, "ingresses.config.openshift.io/cluster", "{.spec.domain}")
-	if err != nil || appsDomain == "" {
-		return fmt.Errorf("could not determine OpenShift apps domain — is this an OpenShift cluster? (kubectl get ingresses.config.openshift.io cluster)")
-	}
-	routeHost := fmt.Sprintf("gateway-openshell.%s", appsDomain)
-
-	helmArgs := []string{
-		"upgrade", "--install", "openshell", chartOCI,
-		"--version", chartVersion,
-		"--values", filepath.Join(harnessDir, "gateways", "ocp", "helm", "values.yaml"),
-		"--set", "server.sandboxImage=" + sandboxImage,
-		"--set", "pkiInitJob.serverDnsNames[0]=" + routeHost,
-	}
-	if ps := os.Getenv("PULL_SECRET"); ps != "" {
-		helmArgs = append(helmArgs, "--set", "imagePullSecrets[0].name="+ps)
-	}
-	if sps := os.Getenv("SANDBOX_PULL_SECRET"); sps != "" {
-		helmArgs = append(helmArgs, "--set", "server.sandboxImagePullSecrets[0].name="+sps)
-	}
-	if err := kc.RunHelm(ctx, helmArgs...); err != nil {
-		return fmt.Errorf("helm install failed: %w", err)
-	}
-
-	// Wait for gateway
-	status.Section("Waiting for gateway")
-	if err := kc.RunKubectlPassthrough(ctx, "rollout", "status", "statefulset/openshell", "--timeout=300s"); err != nil {
-		return fmt.Errorf("gateway rollout failed: %w", err)
-	}
-
-	// Step 5: Route
-	status.Step(5, "Creating OpenShift route")
-	if err := kc.RunKubectlQuiet(ctx, "get", "route", "gateway"); err != nil {
-		kc.RunKubectlPassthrough(ctx, "apply", "-f", filepath.Join(harnessDir, "gateways", "ocp", "addons", "route.yaml"))
-	}
-	fmt.Printf("  Route: %s\n", routeHost)
-
-	// Step 6: CLI gateway config
-	status.Step(6, "Configuring CLI gateway")
-	gatewayName := envOr("GATEWAY_NAME", "openshell-remote-ocp")
-	gatewayURL := fmt.Sprintf("https://%s:443", routeHost)
-
-	// Remove existing gateways for this host
-	existing, _ := gw.GatewayList()
-	for _, g := range existing {
-		if strings.Contains(g.Endpoint, routeHost) {
-			gw.GatewayRemove(g.Name)
-		}
-	}
-
-	if err := gw.GatewayAdd(gatewayURL, gatewayName, true); err != nil {
-		return fmt.Errorf("registering gateway %s: %w", gatewayName, err)
-	}
-
-	// Extract mTLS certs
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("determining home directory: %w", err)
-	}
-	mtlsDir := filepath.Join(home, ".config", "openshell", "gateways", gatewayName, "mtls")
-	if err := os.MkdirAll(mtlsDir, 0o700); err != nil {
-		return fmt.Errorf("creating mtls directory: %w", err)
-	}
-	for _, field := range []string{"ca.crt", "tls.crt", "tls.key"} {
-		data, err := kc.GetSecretField(ctx, "openshell-client-tls", field)
-		if err != nil {
-			return fmt.Errorf("extracting %s from openshell-client-tls: %w", field, err)
-		}
-		if err := os.WriteFile(filepath.Join(mtlsDir, field), data, 0o600); err != nil {
-			return fmt.Errorf("writing %s: %w", field, err)
-		}
-	}
-
-	if err := gw.GatewaySelect(gatewayName); err != nil {
-		return fmt.Errorf("selecting gateway %s: %w", gatewayName, err)
-	}
-	status.OKf("%s registered (certs from cluster)", gatewayName)
-
-	// Wait for gateway to be reachable
-	fmt.Print("  Waiting for gateway...")
-	var gwReachable bool
-	for range 30 {
-		if gw.InferenceGet() == nil {
-			gwReachable = true
-			status.OK("reachable")
-			break
-		}
-		time.Sleep(2 * time.Second)
-		fmt.Print(".")
-	}
-	if !gwReachable {
-		fmt.Println()
-		return fmt.Errorf("gateway not reachable after 60s (try: openshell inference get)")
-	}
-
-	fmt.Println()
-	status.Done("Done.")
-	return nil
+	return "", fmt.Errorf("specify a gateway: harness deploy <local|ocp|kind>")
 }
 
 func deployLocal(gw gateway.Gateway) error {
@@ -264,6 +123,180 @@ func deployLocal(gw gateway.Gateway) error {
 		fmt.Println("    macOS:  brew services start openshell")
 		fmt.Println("    Linux:  systemctl --user start openshell")
 		return fmt.Errorf("gateway not responding")
+	}
+
+	fmt.Println()
+	status.Done("Done.")
+	return nil
+}
+
+func deployFromConfig(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gateway, kc, clusterRunner k8s.Runner) (retErr error) {
+	defer func() {
+		if retErr != nil {
+			fmt.Fprintf(os.Stderr, "\nDeploy failed. Clean up with: harness teardown --k8s\n")
+		}
+	}()
+	ctx := context.Background()
+	namespace := k8s.DefaultNamespace()
+
+	chartVersion := os.Getenv("OPENSHELL_CHART_VERSION")
+	if chartVersion == "" {
+		cfg, _ := preflight.LoadConfig(filepath.Join(harnessDir, "openshell.toml"))
+		if cfg != nil && cfg.Upstream.ChartVersion != "" {
+			chartVersion = cfg.Upstream.ChartVersion
+		}
+	}
+	if chartVersion == "" {
+		chartVersion = gwCfg.Chart.Version
+	}
+
+	fmt.Printf("OpenShell chart: %s\n", chartVersion)
+	if kbcfg := os.Getenv("KUBECONFIG"); kbcfg != "" {
+		fmt.Printf("KUBECONFIG: %s\n", kbcfg)
+	}
+	fmt.Println()
+
+	// Step 1: Namespace
+	status.Step(1, "Creating namespace")
+	clusterRunner.RunKubectl(ctx, "create", "ns", namespace)
+	if _, err := clusterRunner.RunKubectl(ctx, "label", "ns", namespace,
+		"pod-security.kubernetes.io/enforce=privileged",
+		"pod-security.kubernetes.io/warn=privileged",
+		"--overwrite"); err != nil {
+		return fmt.Errorf("labeling namespace: %w", err)
+	}
+
+	// Step 2: Sandbox CRD
+	status.Step(2, "Installing Sandbox CRD")
+	if err := clusterRunner.RunKubectlPassthrough(ctx, "apply", "-f", gwCfg.Chart.CRD.URL); err != nil {
+		return fmt.Errorf("installing sandbox CRD: %w", err)
+	}
+
+	// Step 3: Platform-specific setup
+	if gwCfg.IsOCP() {
+		status.Step(3, "Granting OpenShift SCCs")
+		for _, sa := range gwCfg.OCP.SCCPrivileged {
+			kc.RunOC(ctx, "adm", "policy", "add-scc-to-user", "privileged", "-z", sa, "-n", namespace)
+		}
+		for _, sa := range gwCfg.OCP.SCCAnyuid {
+			kc.RunOC(ctx, "adm", "policy", "add-scc-to-user", "anyuid", "-z", sa, "-n", namespace)
+		}
+		clusterRunner.RunKubectl(ctx, "create", "clusterrolebinding", "agent-sandbox-admin",
+			"--clusterrole=cluster-admin",
+			"--serviceaccount=agent-sandbox-system:agent-sandbox-controller")
+	}
+
+	// Addon manifests (RBAC, etc.)
+	for _, manifestPath := range gwCfg.ManifestPaths() {
+		if err := kc.RunKubectlPassthrough(ctx, "apply", "-f", manifestPath); err != nil {
+			return fmt.Errorf("applying %s: %w", filepath.Base(manifestPath), err)
+		}
+	}
+
+	// Step 4: Helm install
+	status.Step(4, "Deploying gateway via Helm")
+
+	var gatewayURL string
+	var routeHost string
+
+	switch gwCfg.Gateway.Service {
+	case "route":
+		appsDomain, err := clusterRunner.GetJSONPath(ctx, "ingresses.config.openshift.io/cluster", "{.spec.domain}")
+		if err != nil || appsDomain == "" {
+			return fmt.Errorf("could not determine OpenShift apps domain — is this an OpenShift cluster? (kubectl get ingresses.config.openshift.io cluster)")
+		}
+		routeHost = fmt.Sprintf("gateway-openshell.%s", appsDomain)
+		gatewayURL = fmt.Sprintf("https://%s:443", routeHost)
+	case "nodeport":
+		gatewayURL = ""
+	case "loadbalancer":
+		gatewayURL = ""
+	}
+
+	helmArgs := []string{
+		"upgrade", "--install", "openshell", gwCfg.Chart.OCI,
+		"--version", chartVersion,
+	}
+	if valuesPath := gwCfg.HelmValuesPath(); valuesPath != "" {
+		helmArgs = append(helmArgs, "--values", valuesPath)
+	}
+	if sandboxImage := os.Getenv("SANDBOX_IMAGE"); sandboxImage != "" {
+		helmArgs = append(helmArgs, "--set", "server.sandboxImage="+sandboxImage)
+	}
+	if routeHost != "" {
+		helmArgs = append(helmArgs, "--set", "pkiInitJob.serverDnsNames[0]="+routeHost)
+	}
+	if ps := os.Getenv("PULL_SECRET"); ps != "" {
+		helmArgs = append(helmArgs, "--set", "imagePullSecrets[0].name="+ps)
+	}
+	if sps := os.Getenv("SANDBOX_PULL_SECRET"); sps != "" {
+		helmArgs = append(helmArgs, "--set", "server.sandboxImagePullSecrets[0].name="+sps)
+	}
+	if err := kc.RunHelm(ctx, helmArgs...); err != nil {
+		return fmt.Errorf("helm install failed: %w", err)
+	}
+
+	status.Section("Waiting for gateway")
+	if err := kc.RunKubectlPassthrough(ctx, "rollout", "status", "statefulset/openshell", "--timeout=300s"); err != nil {
+		return fmt.Errorf("gateway rollout failed: %w", err)
+	}
+
+	// Step 5: CLI gateway config
+	status.Step(5, "Configuring CLI gateway")
+	gatewayName := gwCfg.Gateway.Name
+
+	if gatewayURL == "" {
+		return fmt.Errorf("service type %q endpoint resolution not yet implemented", gwCfg.Gateway.Service)
+	}
+
+	existing, _ := gw.GatewayList()
+	for _, g := range existing {
+		if routeHost != "" && strings.Contains(g.Endpoint, routeHost) {
+			gw.GatewayRemove(g.Name)
+		}
+	}
+
+	if err := gw.GatewayAdd(gatewayURL, gatewayName, true); err != nil {
+		return fmt.Errorf("registering gateway %s: %w", gatewayName, err)
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("determining home directory: %w", err)
+	}
+	mtlsDir := filepath.Join(home, ".config", "openshell", "gateways", gatewayName, "mtls")
+	if err := os.MkdirAll(mtlsDir, 0o700); err != nil {
+		return fmt.Errorf("creating mtls directory: %w", err)
+	}
+	for _, field := range []string{"ca.crt", "tls.crt", "tls.key"} {
+		data, err := kc.GetSecretField(ctx, gwCfg.Secrets.MTLS, field)
+		if err != nil {
+			return fmt.Errorf("extracting %s from %s: %w", field, gwCfg.Secrets.MTLS, err)
+		}
+		if err := os.WriteFile(filepath.Join(mtlsDir, field), data, 0o600); err != nil {
+			return fmt.Errorf("writing %s: %w", field, err)
+		}
+	}
+
+	if err := gw.GatewaySelect(gatewayName); err != nil {
+		return fmt.Errorf("selecting gateway %s: %w", gatewayName, err)
+	}
+	status.OKf("%s registered (certs from cluster)", gatewayName)
+
+	fmt.Print("  Waiting for gateway...")
+	var gwReachable bool
+	for range 30 {
+		if gw.InferenceGet() == nil {
+			gwReachable = true
+			status.OK("reachable")
+			break
+		}
+		time.Sleep(2 * time.Second)
+		fmt.Print(".")
+	}
+	if !gwReachable {
+		fmt.Println()
+		return fmt.Errorf("gateway not reachable after 60s (try: openshell inference get)")
 	}
 
 	fmt.Println()
