@@ -43,7 +43,6 @@ values = "values.yaml"
 manifests = ["addons/rbac.yaml", "addons/route.yaml"]
 
 [images]
-sandbox = "example.com/sandbox:v1"
 launcher = "example.com/launcher:v1"
 
 [ocp]
@@ -94,9 +93,6 @@ gateway-endpoint = "https://gw.cluster.local:9090"
 	if cfg.Chart.CRD.URL != "https://example.com/crd.yaml" {
 		t.Errorf("chart.crd.url = %q", cfg.Chart.CRD.URL)
 	}
-	if cfg.Images.Sandbox != "example.com/sandbox:v1" {
-		t.Errorf("images.sandbox = %q", cfg.Images.Sandbox)
-	}
 	if cfg.Images.Launcher != "example.com/launcher:v1" {
 		t.Errorf("images.launcher = %q", cfg.Images.Launcher)
 	}
@@ -142,9 +138,6 @@ type = "local"
 	// Defaults applied
 	if cfg.Chart.OCI != "oci://ghcr.io/nvidia/openshell/helm-chart" {
 		t.Errorf("default chart.oci = %q", cfg.Chart.OCI)
-	}
-	if cfg.Images.Sandbox != "ghcr.io/robbycochran/harness-openshell:sandbox" {
-		t.Errorf("default images.sandbox = %q", cfg.Images.Sandbox)
 	}
 	if cfg.Secrets.MTLS != "openshell-client-tls" {
 		t.Errorf("default secrets.mtls = %q", cfg.Secrets.MTLS)
@@ -204,11 +197,9 @@ type = "remote"
 name = "original-name"
 
 [images]
-sandbox = "original-sandbox"
 launcher = "original-launcher"
 `)
 
-	t.Setenv("SANDBOX_IMAGE", "env-sandbox:v2")
 	t.Setenv("LAUNCHER_IMAGE", "env-launcher:v2")
 	t.Setenv("GATEWAY_NAME", "env-gw-name")
 
@@ -217,9 +208,6 @@ launcher = "original-launcher"
 		t.Fatal(err)
 	}
 
-	if cfg.Images.Sandbox != "env-sandbox:v2" {
-		t.Errorf("SANDBOX_IMAGE override: got %q", cfg.Images.Sandbox)
-	}
 	if cfg.Images.Launcher != "env-launcher:v2" {
 		t.Errorf("LAUNCHER_IMAGE override: got %q", cfg.Images.Launcher)
 	}
@@ -235,12 +223,9 @@ func TestEnvOverrides_NotSet(t *testing.T) {
 type = "remote"
 name = "original-name"
 
-[images]
-sandbox = "original-sandbox"
 `)
 
 	// Ensure env vars are not set
-	t.Setenv("SANDBOX_IMAGE", "")
 	t.Setenv("LAUNCHER_IMAGE", "")
 	t.Setenv("GATEWAY_NAME", "")
 
@@ -249,9 +234,6 @@ sandbox = "original-sandbox"
 		t.Fatal(err)
 	}
 
-	if cfg.Images.Sandbox != "original-sandbox" {
-		t.Errorf("expected original value, got %q", cfg.Images.Sandbox)
-	}
 	if cfg.Gateway.Name != "original-name" {
 		t.Errorf("expected original value, got %q", cfg.Gateway.Name)
 	}

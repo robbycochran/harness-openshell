@@ -33,7 +33,6 @@ values = "values.yaml"
 manifests = ["addons/rbac.yaml", "addons/route.yaml"]
 
 [images]
-sandbox = "ghcr.io/robbycochran/harness-openshell:sandbox"
 launcher = "ghcr.io/robbycochran/harness-openshell:launcher"
 
 [ocp]

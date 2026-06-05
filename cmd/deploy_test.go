@@ -44,7 +44,6 @@ values = "values.yaml"
 manifests = ["addons/rbac.yaml", "addons/route.yaml"]
 
 [images]
-sandbox = "test-sandbox:v1"
 launcher = "test-launcher:v1"
 
 [ocp]
@@ -83,8 +82,6 @@ version = "0.0.55"
 [chart.crd]
 url = "https://example.com/crd.yaml"
 
-[images]
-sandbox = "test-sandbox:v1"
 `), 0o644)
 	return gwDir
 }

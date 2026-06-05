@@ -124,21 +124,20 @@ func newRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gatew
 		cfg.Name = sandboxName
 	}
 
-	// Remote can't build from a local Dockerfile — override with registry image
-	if cfg.From != "" {
+	// Resolve sandbox image for remote deploys.
+	// SANDBOX_IMAGE env var overrides everything (dev/CI builds).
+	// Otherwise the profile's 'from' field is authoritative — each profile
+	// specifies its own image (default.toml uses the custom sandbox,
+	// ci.toml uses the upstream community base).
+	if envImage := os.Getenv("SANDBOX_IMAGE"); envImage != "" {
+		cfg.From = envImage
+	} else if cfg.From != "" {
 		fromPath := cfg.From
 		if !filepath.IsAbs(fromPath) {
 			fromPath = filepath.Join(harnessDir, fromPath)
 		}
 		if info, err := os.Stat(fromPath); err == nil && info.IsDir() {
-			sandboxImage := "ghcr.io/robbycochran/harness-openshell:sandbox"
-			if gwCfg != nil {
-				sandboxImage = gwCfg.Images.Sandbox
-			} else {
-				sandboxImage = envOr("SANDBOX_IMAGE", sandboxImage)
-			}
-			status.Infof("Remote: using image %s (profile 'from' is a local path)", sandboxImage)
-			cfg.From = sandboxImage
+			cfg.From = envOr("SANDBOX_IMAGE", "ghcr.io/robbycochran/harness-openshell:sandbox")
 		}
 	}
 

@@ -56,7 +56,6 @@ type AddonsSection struct {
 }
 
 type ImagesSection struct {
-	Sandbox  string `toml:"sandbox"`
 	Launcher string `toml:"launcher"`
 }
 
@@ -94,9 +93,6 @@ func (c *GatewayConfig) applyDefaults() {
 	if c.Chart.CRD.URL == "" {
 		c.Chart.CRD.URL = "https://github.com/kubernetes-sigs/agent-sandbox/releases/latest/download/manifest.yaml"
 	}
-	if c.Images.Sandbox == "" {
-		c.Images.Sandbox = "ghcr.io/robbycochran/harness-openshell:sandbox"
-	}
 	if c.Images.Launcher == "" {
 		c.Images.Launcher = "ghcr.io/robbycochran/harness-openshell:launcher"
 	}
@@ -119,9 +115,6 @@ func (c *GatewayConfig) applyDefaults() {
 }
 
 func (c *GatewayConfig) applyEnvOverrides() {
-	if v := os.Getenv("SANDBOX_IMAGE"); v != "" {
-		c.Images.Sandbox = v
-	}
 	if v := os.Getenv("LAUNCHER_IMAGE"); v != "" {
 		c.Images.Launcher = v
 	}

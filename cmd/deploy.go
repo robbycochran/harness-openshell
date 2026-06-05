@@ -220,7 +220,9 @@ func deployFromConfig(harnessDir string, gwCfg *gateway.GatewayConfig, gw gatewa
 	if valuesPath := gwCfg.HelmValuesPath(); valuesPath != "" {
 		helmArgs = append(helmArgs, "--values", valuesPath)
 	}
-	helmArgs = append(helmArgs, "--set", "server.sandboxImage="+gwCfg.Images.Sandbox)
+	if sandboxImage := os.Getenv("SANDBOX_IMAGE"); sandboxImage != "" {
+		helmArgs = append(helmArgs, "--set", "server.sandboxImage="+sandboxImage)
+	}
 	if routeHost != "" {
 		helmArgs = append(helmArgs, "--set", "pkiInitJob.serverDnsNames[0]="+routeHost)
 	}

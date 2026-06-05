@@ -23,5 +23,3 @@ version = "0.0.55"
 [chart.crd]
 url = "https://github.com/kubernetes-sigs/agent-sandbox/releases/latest/download/manifest.yaml"
 
-[images]
-sandbox = "ghcr.io/robbycochran/harness-openshell:sandbox"
