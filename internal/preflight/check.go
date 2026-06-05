@@ -11,7 +11,7 @@ import (
 	"github.com/robbycochran/harness-openshell/internal/status"
 )
 
-func RunCheck(harnessDir string, gw gateway.Gateway, strict bool) error {
+func loadEnabledProviders(harnessDir string) ([]Provider, error) {
 	providersPath := os.Getenv("PROVIDERS_TOML")
 	if providersPath == "" {
 		providersPath = filepath.Join(harnessDir, "providers.toml")
@@ -20,16 +20,19 @@ func RunCheck(harnessDir string, gw gateway.Gateway, strict bool) error {
 	if configPath == "" {
 		configPath = filepath.Join(harnessDir, "openshell.toml")
 	}
+	all, err := LoadProviders(providersPath)
+	if err != nil {
+		return nil, err
+	}
+	config, _ := LoadConfig(configPath)
+	return EnabledProviders(all, config), nil
+}
 
-	allProviders, err := LoadProviders(providersPath)
+func RunCheck(harnessDir string, gw gateway.Gateway, strict bool) error {
+	providers, err := loadEnabledProviders(harnessDir)
 	if err != nil {
 		return err
 	}
-	config, err := LoadConfig(configPath)
-	if err != nil {
-		return err
-	}
-	providers := EnabledProviders(allProviders, config)
 
 	hasFailures := false
 
@@ -162,27 +165,16 @@ func RunCheck(harnessDir string, gw gateway.Gateway, strict bool) error {
 	// Summary
 	status.Summary(!hasFailures)
 	if hasFailures && strict {
-		os.Exit(1)
+		return fmt.Errorf("preflight: required checks failed")
 	}
 	return nil
 }
 
 func RunAvailable(harnessDir string) error {
-	providersPath := os.Getenv("PROVIDERS_TOML")
-	if providersPath == "" {
-		providersPath = filepath.Join(harnessDir, "providers.toml")
-	}
-	configPath := os.Getenv("CONFIG_TOML")
-	if configPath == "" {
-		configPath = filepath.Join(harnessDir, "openshell.toml")
-	}
-
-	all, err := LoadProviders(providersPath)
+	providers, err := loadEnabledProviders(harnessDir)
 	if err != nil {
 		return err
 	}
-	config, _ := LoadConfig(configPath)
-	providers := EnabledProviders(all, config)
 
 	var available []string
 	for _, p := range providers {
@@ -199,21 +191,10 @@ func RunAvailable(harnessDir string) error {
 }
 
 func RunNames(harnessDir string) error {
-	providersPath := os.Getenv("PROVIDERS_TOML")
-	if providersPath == "" {
-		providersPath = filepath.Join(harnessDir, "providers.toml")
-	}
-	configPath := os.Getenv("CONFIG_TOML")
-	if configPath == "" {
-		configPath = filepath.Join(harnessDir, "openshell.toml")
-	}
-
-	all, err := LoadProviders(providersPath)
+	providers, err := loadEnabledProviders(harnessDir)
 	if err != nil {
 		return err
 	}
-	config, _ := LoadConfig(configPath)
-	providers := EnabledProviders(all, config)
 
 	var names []string
 	for _, p := range providers {

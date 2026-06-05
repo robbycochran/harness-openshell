@@ -97,6 +97,10 @@ func (c *CLI) ProviderProfileImport(dir string) error {
 	return c.silent("provider", "profile", "import", "--from", dir)
 }
 
+func (c *CLI) ProviderProfileDelete(id string) error {
+	return c.silent("provider", "profile", "delete", id)
+}
+
 func (c *CLI) ProviderList() ([]string, error) {
 	out, err := c.output("provider", "list")
 	if err != nil {
@@ -107,7 +111,8 @@ func (c *CLI) ProviderList() ([]string, error) {
 		if i == 0 || strings.TrimSpace(line) == "" {
 			continue // skip header
 		}
-		fields := strings.Fields(line)
+		cleaned := ansiRE.ReplaceAllString(line, "")
+		fields := strings.Fields(cleaned)
 		if len(fields) > 0 {
 			names = append(names, fields[0])
 		}

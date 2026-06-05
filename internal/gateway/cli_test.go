@@ -183,3 +183,128 @@ exit 1
 		t.Error("SandboxDelete = nil, want error")
 	}
 }
+
+func TestGatewayList_ParsesActiveAndInactive(t *testing.T) {
+	bin := writeStub(t, `#!/bin/bash
+printf "NAME\tENDPOINT\tTYPE\tAUTH\n"
+printf "  openshell\thttps://127.0.0.1:17670\tlocal\tmtls\n"
+printf "* openshell-remote-ocp\thttps://gw.example.com:443\tlocal\tmtls\n"
+`)
+	gw := NewCLI(bin)
+	gateways, err := gw.GatewayList()
+	if err != nil {
+		t.Fatalf("GatewayList: %v", err)
+	}
+	if len(gateways) != 2 {
+		t.Fatalf("got %d gateways, want 2", len(gateways))
+	}
+	if gateways[0].Active {
+		t.Error("first gateway should not be active")
+	}
+	if !gateways[1].Active {
+		t.Error("second gateway should be active")
+	}
+	if !strings.Contains(gateways[0].Endpoint, "127.0.0.1") {
+		t.Errorf("first endpoint = %q, want 127.0.0.1", gateways[0].Endpoint)
+	}
+}
+
+func TestSandboxList_ParsesWithANSI(t *testing.T) {
+	bin := writeStub(t, `#!/bin/bash
+printf "NAME\tPHASE\n"
+printf "\033[32magent\033[0m\tReady\n"
+printf "\033[32mtest-agent\033[0m\tReady\n"
+`)
+	gw := NewCLI(bin)
+	names, err := gw.SandboxList()
+	if err != nil {
+		t.Fatalf("SandboxList: %v", err)
+	}
+	if len(names) != 2 {
+		t.Fatalf("got %d sandboxes, want 2: %v", len(names), names)
+	}
+	if names[0] != "agent" || names[1] != "test-agent" {
+		t.Errorf("names = %v", names)
+	}
+}
+
+func TestSandboxList_Empty(t *testing.T) {
+	bin := writeStub(t, `#!/bin/bash
+printf "NAME\tPHASE\n"
+`)
+	gw := NewCLI(bin)
+	names, err := gw.SandboxList()
+	if err != nil {
+		t.Fatalf("SandboxList: %v", err)
+	}
+	if len(names) != 0 {
+		t.Errorf("got %d, want 0", len(names))
+	}
+}
+
+func TestActiveGateway_WithStar(t *testing.T) {
+	bin := writeStub(t, `#!/bin/bash
+printf "NAME\tENDPOINT\n"
+printf "  local\thttps://127.0.0.1:17670\n"
+printf "* remote\thttps://gw.example.com\n"
+`)
+	gw := NewCLI(bin)
+	active := gw.ActiveGateway()
+	if active != "remote" {
+		t.Errorf("ActiveGateway = %q, want remote", active)
+	}
+}
+
+func TestActiveGateway_None(t *testing.T) {
+	bin := writeStub(t, `#!/bin/bash
+printf "NAME\tENDPOINT\n"
+printf "  local\thttps://127.0.0.1:17670\n"
+`)
+	gw := NewCLI(bin)
+	active := gw.ActiveGateway()
+	if active != "" {
+		t.Errorf("ActiveGateway = %q, want empty", active)
+	}
+}
+
+func TestInferenceModel_ParsesModel(t *testing.T) {
+	bin := writeStub(t, `#!/bin/bash
+echo "Provider: vertex-local"
+echo "Model: claude-sonnet-4-6"
+`)
+	gw := NewCLI(bin)
+	model := gw.InferenceModel()
+	if model != "claude-sonnet-4-6" {
+		t.Errorf("InferenceModel = %q, want claude-sonnet-4-6", model)
+	}
+}
+
+func TestCLIVersion(t *testing.T) {
+	bin := writeStub(t, `#!/bin/bash
+echo "openshell v0.0.55"
+`)
+	gw := NewCLI(bin)
+	ver := gw.CLIVersion()
+	if ver != "openshell v0.0.55" {
+		t.Errorf("CLIVersion = %q", ver)
+	}
+}
+
+func TestCLIPath(t *testing.T) {
+	bin := writeStub(t, `#!/bin/bash
+exit 0
+`)
+	gw := NewCLI(bin)
+	path := gw.CLIPath()
+	if path == "" {
+		t.Error("CLIPath = empty, want non-empty")
+	}
+}
+
+func TestCLIPath_NotFound(t *testing.T) {
+	gw := NewCLI("/nonexistent/openshell")
+	path := gw.CLIPath()
+	if path != "" {
+		t.Errorf("CLIPath = %q, want empty", path)
+	}
+}

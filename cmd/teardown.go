@@ -69,13 +69,20 @@ func teardownSandboxes(gw gateway.Gateway, activeGW string) {
 		return
 	}
 
-	names, _ := gw.SandboxList()
+	names, err := gw.SandboxList()
+	if err != nil {
+		status.Fail(fmt.Sprintf("could not list sandboxes: %v", err))
+		fmt.Println()
+		return
+	}
 	if len(names) == 0 {
 		status.Info("None running")
 	} else {
 		for _, name := range names {
 			fmt.Printf("  Deleting %s\n", name)
-			gw.SandboxDelete(name)
+			if err := gw.SandboxDelete(name); err != nil {
+				status.Failf("failed to delete %s: %v", name, err)
+			}
 		}
 	}
 	fmt.Println()
@@ -89,18 +96,26 @@ func teardownProviders(gw gateway.Gateway, activeGW string) error {
 		return nil
 	}
 
-	remaining, _ := gw.SandboxList()
+	remaining, err := gw.SandboxList()
+	if err != nil {
+		return fmt.Errorf("could not check for running sandboxes: %w", err)
+	}
 	if len(remaining) > 0 {
 		return fmt.Errorf("cannot delete providers with running sandboxes — run: harness teardown --sandboxes")
 	}
 
-	names, _ := gw.ProviderList()
+	names, err := gw.ProviderList()
+	if err != nil {
+		return fmt.Errorf("could not list providers: %w", err)
+	}
 	if len(names) == 0 {
 		status.Info("None registered")
 	} else {
 		for _, name := range names {
 			fmt.Printf("  Deleting %s\n", name)
-			gw.ProviderDelete(name)
+			if err := gw.ProviderDelete(name); err != nil {
+				status.Failf("failed to delete %s: %v", name, err)
+			}
 		}
 	}
 
