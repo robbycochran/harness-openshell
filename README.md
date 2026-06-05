@@ -1,83 +1,78 @@
 # OpenShell Harness
 
-Deploy AI agent sandboxes on Podman (local) or OpenShift using [OpenShell](https://github.com/NVIDIA/OpenShell). Each sandbox gets:
+A gateway harness for [OpenShell](https://github.com/NVIDIA/OpenShell). One command to a working AI agent sandbox — gateway deployed, providers registered, credentials validated, sandbox running.
 
-- **Claude Code** via Google Vertex AI (`inference.local` routing)
-- **Jira/Confluence** via mcp-atlassian MCP server
-- **Gmail, Calendar, Drive** via gws CLI
-- **GitHub** via gh CLI
+Without this tool, setting up a sandbox means manually deploying an OpenShell gateway (Helm install, mTLS cert extraction, SCC grants), manually registering providers with credentials scattered across env vars and files, and debugging when credentials expire or proxies misconfigure. The harness handles all of that.
+
+## What it does
+
+The harness wraps `openshell` — it doesn't replace it. It adds orchestration, validation, and configuration management across three domains:
+
+| Domain | What | Config |
+|--------|------|--------|
+| **Infrastructure** | Deploy the gateway (local Podman or remote OpenShift), Helm, mTLS, RBAC | `openshell.toml` |
+| **Providers** | Register credential providers (Vertex AI, GitHub, Atlassian), validate inputs | `providers.toml` |
+| **Sandbox** | Create sandboxes from profiles, stage files, connect | `profiles/*.toml` |
+
+Each sandbox gets:
+- Claude Code via Vertex AI (`inference.local` gateway routing)
+- Jira and Confluence via mcp-atlassian MCP server
+- Gmail, Calendar, Drive via gws CLI
+- GitHub via gh CLI
 - Network policy enforcement per sandbox
 
 ## Prerequisites
 
 - [OpenShell CLI](https://github.com/NVIDIA/OpenShell) (`openshell`)
-- Python 3.11+ (for TOML parsing)
-- Podman (local) or kubectl + helm (OCP)
-- `gcloud auth application-default login` (for Vertex AI)
+- Podman (local) or kubectl + helm (OpenShift)
+- `gcloud auth application-default login` (Vertex AI)
 
-Optional: `gws` CLI (Google Workspace), `bats` (for unit tests)
+Optional: `gws` CLI (Google Workspace), `bats` (tests)
 
-## Setup
-
-```bash
-# Add harness CLI to PATH
-export PATH="$PWD/bin:$PATH"
-
-# See available commands
-harness
-```
-
-## Quick Start (Local)
+## Quick Start
 
 ```bash
-# Install OpenShell if you haven't
-curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
-
 # Set credentials
 export GITHUB_TOKEN="ghp_..."
 export JIRA_API_TOKEN="..."
 export ANTHROPIC_VERTEX_PROJECT_ID="my-project"
-export CLOUD_ML_REGION="us-east5"
 
-# Create a sandbox (deploys gateway + registers providers if needed)
+# Local — deploy gateway, register providers, create sandbox
 harness new --local
-```
 
-## Quick Start (OpenShift)
-
-```bash
-# Create a sandbox on the cluster
+# OpenShift — same flow, remote cluster
 harness new --remote
+
+# Reconnect to a running sandbox
+harness connect
 ```
 
-## CLI Reference
+## Commands
 
 ```
-harness new [--local|--remote] [--profile NAME] [SANDBOX_NAME]
-    Create a new sandbox. Auto-deploys gateway and registers providers if needed.
+harness new [--local|--remote] [--profile NAME]
+    Full flow: deploy gateway + register providers + create sandbox.
 
-harness connect [SANDBOX_NAME]
+harness connect [NAME]
     Reconnect to a running sandbox.
 
 harness deploy [--local|--remote]
     Deploy or verify the gateway without creating a sandbox.
 
-harness teardown [--sandboxes] [--providers] [--k8s]
-    Tear down sandboxes, providers, or k8s resources.
-
-harness preflight
-    Check environment prerequisites.
-
-harness providers
+harness providers [--force]
     Register providers with the gateway.
 
-harness test [podman|ocp|all] [--full]
-    End-to-end validation.
+harness preflight [--strict]
+    Check environment prerequisites (credentials, CLI tools, gateway).
+
+harness teardown [--sandboxes] [--providers] [--k8s]
+    Tear down sandboxes, providers, or cluster resources.
+    At least one flag required.
 ```
 
 ## Profiles
 
-Sandboxes are configured via `profiles/*.toml`:
+Sandboxes are configured via TOML profiles:
 
 ```toml
 # profiles/default.toml
@@ -91,58 +86,63 @@ ANTHROPIC_BASE_URL = "https://inference.local"
 JIRA_URL = "https://mysite.atlassian.net"
 ```
 
-Use a specific profile: `harness new --profile coder`
+Use a specific profile: `harness new --profile research`
 
-## Testing
-
-```bash
-harness test podman --full    # full local validation
-harness test ocp --full       # full OCP validation
-bats test/preflight.bats      # unit tests (29 tests)
-make test                     # build images + test both
-```
-
-## Files
-
-| Path | Purpose |
-|------|---------|
-| `bin/harness` | CLI entry point |
-| `bin/scripts/` | Subcommand scripts (new, deploy, teardown, etc.) |
-| `bin/scripts/lib/` | Shared libraries (profile parsing, providers, common) |
-| `profiles/default.toml` | Default sandbox profile |
-| `providers.toml` | Provider definitions (env/file/check inputs) |
-| `openshell.toml` | Which providers to enable, upstream version pin |
-| `sandbox/` | Sandbox image (Dockerfile, startup.sh, policy.yaml, CLAUDE.md) |
-| `sandbox/launcher/` | In-cluster launcher image (for OCP sandboxes) |
-| `test/` | Tests (preflight.bats, test-flow.sh) |
-| `values-ocp.yaml` | Helm values for OpenShift deployment |
-| `AGENTS.md` | Project principles and workaround tracking |
-
-## Why Use a Sandbox?
+## Why a sandbox
 
 Compared to running Claude Code locally:
-- **Credential isolation** — sandbox never sees real API tokens (proxy-resolved placeholders)
-- **Network policy** — per-binary egress rules (policy.yaml controls which processes reach which hosts)
-- **Reproducible environment** — pinned tool versions in Dockerfile
-- **Team sharing** — OCP deployment with mTLS, shared gateway, per-user sandboxes
+
+- **Credential isolation** — the sandbox never sees real API tokens (proxy-resolved placeholders)
+- **Network policy** — per-binary egress rules control which processes reach which hosts
+- **Reproducible environment** — pinned tool versions, same setup across machines and team members
+- **Team sharing** — OpenShift deployment with mTLS, shared gateway, per-user sandboxes
 
 ## Architecture
 
 ```
-Your Mac                         OpenShift Cluster
-┌──────────┐                   ┌──────────────────────────────┐
-│ harness  │   OpenShift Route │ Gateway (StatefulSet)         │
-│ CLI      ├──────────────────►│   ├─ gRPC API                 │
-│          │   TLS passthrough │   ├─ inference.local proxy     │
-│          │   mTLS :443       │   ├─ Provider credential store │
-└──────────┘                   │   └─ OAuth token refresh       │
-                               │                               │
-                               │ Sandbox Pods                  │
-                               │   ├─ Claude Code → inference  │
-                               │   │   .local → Vertex AI      │
-                               │   ├─ mcp-atlassian            │
-                               │   ├─ gws CLI                  │
-                               │   ├─ gh CLI                   │
-                               │   └─ Network proxy            │
-                               └──────────────────────────────┘
+Your machine                      OpenShift cluster
+┌──────────┐                    ┌──────────────────────────────┐
+│ harness  │  Route (mTLS)      │ Gateway (StatefulSet)         │
+│ CLI      ├───────────────────►│   ├─ gRPC API                 │
+│          │                    │   ├─ inference.local proxy     │
+└──────────┘                    │   ├─ Provider credential store │
+                                │   └─ OAuth token refresh       │
+                                │                                │
+                                │ Sandbox Pods                   │
+                                │   ├─ Claude Code → Vertex AI   │
+                                │   ├─ mcp-atlassian             │
+                                │   ├─ gws CLI                   │
+                                │   ├─ gh CLI                    │
+                                │   └─ L7 network proxy          │
+                                └──────────────────────────────┘
 ```
+
+## Project Layout
+
+| Path | Purpose |
+|------|---------|
+| `main.go`, `cmd/` | CLI commands (Go) |
+| `internal/gateway/` | OpenShell CLI wrapper (Gateway interface) |
+| `internal/k8s/` | kubectl/helm/oc runner with retry |
+| `internal/profile/` | Profile TOML parsing |
+| `internal/preflight/` | Provider prerequisite checks |
+| `profiles/` | Sandbox profiles (TOML) |
+| `providers.toml` | Provider catalog (inputs, prerequisites) |
+| `sandbox/` | Sandbox image (Dockerfile, startup, policy, CLAUDE.md) |
+| `sandbox/launcher/` | In-cluster launcher for OCP sandboxes |
+| `sandbox/profiles/` | OpenShell provider type profiles (YAML) |
+| `deploy/` | K8s manifests (RBAC, route) |
+| `test/` | Tests (bats preflight, test-flow.sh integration) |
+
+## Testing
+
+```bash
+make validate            # full matrix: {bash,go} x {podman,ocp}
+make test                # build images + test
+bats test/preflight.bats # 29 preflight unit tests
+go test ./...            # Go unit tests
+```
+
+## Design
+
+The harness is a thin wrapper that should shrink over time. As OpenShell adds native support for features the harness currently bridges (GWS credentials, provider config injection, in-cluster sandbox creation), the custom code gets replaced by upstream. See [AGENTS.md](AGENTS.md) for workaround tracking and [docs/design.md](docs/design.md) for the full design document.
