@@ -281,11 +281,15 @@ func newLocal(opts newLocalOpts) error {
 	}
 
 	// 5. Stage files
-	harnessUploadDir, err := os.MkdirTemp("", "harness-")
+	// The upload preserves the source dir name as a subdirectory at the destination.
+	// startup.sh expects files at /sandbox/.config/openshell/sandbox.env, so the
+	// staging dir must be named "openshell".
+	tmpParent, err := os.MkdirTemp("", "harness-")
 	if err != nil {
 		return fmt.Errorf("creating staging dir: %w", err)
 	}
-	defer os.RemoveAll(harnessUploadDir)
+	defer os.RemoveAll(tmpParent)
+	harnessUploadDir := filepath.Join(tmpParent, "openshell")
 	if err := profile.StageHarnessDir(cfg, harnessUploadDir); err != nil {
 		return fmt.Errorf("staging files: %w", err)
 	}
