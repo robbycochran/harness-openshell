@@ -1,33 +1,32 @@
 #!/usr/bin/env bash
 # End-to-end validation for podman and OCP flows.
 #
-# Supports both the bash (bin/harness) and Go (./harness) entry points.
-# Use --go to test the Go binary. Use --full for sandbox lifecycle tests.
-#
 # Usage:
-#   ./test-flow.sh podman                # quick bash: deploy + providers + teardown
-#   ./test-flow.sh podman --full         # full bash: + sandbox + verify integrations
-#   ./test-flow.sh podman --go           # quick Go: same flow via Go binary
-#   ./test-flow.sh podman --full --go    # full Go
-#   ./test-flow.sh ocp [--full] [--go]           # OCP variants
+#   ./test-flow.sh podman                # quick: deploy + providers + teardown
+#   ./test-flow.sh podman --full         # full: + sandbox + verify integrations
+#   ./test-flow.sh ocp [--full]                  # OCP variants
 #   ./test-flow.sh ocp --full --reuse-gateway   # skip deploy/teardown-k8s (~50s vs ~130s)
-#   ./test-flow.sh all [--full] [--go]           # both platforms
+#   ./test-flow.sh all [--full]                  # both platforms
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-source "$SCRIPT_DIR/bin/scripts/lib/profile.sh"
+HARNESS="$SCRIPT_DIR/harness"
 CLI="${OPENSHELL_CLI:-openshell}"
+
+if [[ ! -x "$HARNESS" ]]; then
+  echo "ERROR: Go binary not found at $HARNESS"
+  echo "  Build it first: make cli"
+  exit 1
+fi
 
 # ── Parse args ──────────────────────────────────────────────────────
 TARGET=""
 FULL=false
-USE_GO=false
 REUSE_GATEWAY=false
 
 for arg in "$@"; do
   case "$arg" in
     --full)           FULL=true ;;
-    --go)             USE_GO=true ;;
     --reuse-gateway)  REUSE_GATEWAY=true ;;
     -*)               ;;
     *)                [[ -z "$TARGET" ]] && TARGET="$arg" ;;
@@ -35,25 +34,15 @@ for arg in "$@"; do
 done
 
 if [[ -z "$TARGET" ]]; then
-  echo "Usage: $0 <podman|ocp|all> [--full] [--go] [--reuse-gateway]"
+  echo "Usage: $0 <podman|ocp|all> [--full] [--reuse-gateway]"
   exit 1
 fi
 
-# ── Entry point: bash or Go ─────────────────────────────────────────
-if $USE_GO; then
-  HARNESS="$SCRIPT_DIR/harness"
-  if [[ ! -x "$HARNESS" ]]; then
-    echo "ERROR: Go binary not found at $HARNESS"
-    echo "  Build it first: make cli"
-    exit 1
-  fi
-  IMPL="go"
-else
-  HARNESS="$SCRIPT_DIR/bin/harness"
-  IMPL="bash"
-fi
-
 # ── Helpers ──────────────────────────────────────────────────────────
+
+strip_ansi() {
+  sed 's/\x1b\[[0-9;]*m//g'
+}
 
 PASS=0
 FAIL=0
@@ -139,16 +128,16 @@ summary() {
   local elapsed=$(( $(date +%s) - TOTAL_START ))
   echo ""
   if [[ $FAIL -eq 0 ]]; then
-    echo "${PASS}/${total} passed (${elapsed}s) [${IMPL}]"
+    echo "${PASS}/${total} passed (${elapsed}s)"
   else
-    echo "${PASS}/${total} passed, ${FAIL} failed (${elapsed}s) [${IMPL}]"
+    echo "${PASS}/${total} passed, ${FAIL} failed (${elapsed}s)"
   fi
 }
 
-# ── Error scenarios (run on both paths) ──────────────────────────────
+# ── Error scenarios ─────────────────────────────────────────────────
 
 test_errors() {
-  echo "=== test: error scenarios ($IMPL) ==="
+  echo "=== test: error scenarios ==="
 
   # Bad profile
   step_fail "nonexistent profile" "$HARNESS" new --local --profile nonexistent --no-tty
@@ -170,7 +159,7 @@ test_errors() {
 test_podman() {
   local mode="quick"
   $FULL && mode="full"
-  echo "=== test-flow: podman ($mode) [$IMPL] ==="
+  echo "=== test-flow: podman ($mode) ==="
 
   step "teardown" "$HARNESS" teardown --sandboxes --providers
   step "deploy" "$HARNESS" deploy --local
@@ -186,7 +175,7 @@ test_podman() {
 
     # Missing providers scenario
     echo ""
-    echo "=== test: missing providers ($IMPL) ==="
+    echo "=== test: missing providers ==="
     step "teardown providers" "$HARNESS" teardown --providers
     step_output "new with no providers" "$HARNESS" new --local --name test-noprov --no-tty
     step "cleanup" "$HARNESS" teardown --sandboxes
@@ -201,7 +190,7 @@ test_ocp() {
   local mode="quick"
   $FULL && mode="full"
   $REUSE_GATEWAY && mode="$mode, reuse-gateway"
-  echo "=== test-flow: ocp ($mode) [$IMPL] ==="
+  echo "=== test-flow: ocp ($mode) ==="
 
   if $REUSE_GATEWAY; then
     # Ensure OCP gateway is selected (error scenarios may have switched to local)
@@ -220,7 +209,6 @@ test_ocp() {
     step "deploy" "$HARNESS" deploy --remote
   fi
 
-  step "setup creds" "$SCRIPT_DIR/bin/scripts/creds.sh"
   step "setup providers" "$HARNESS" providers
   step "gateway reachable" "$CLI" inference get
   check_providers
@@ -255,7 +243,7 @@ case "$TARGET" in
   all)    test_podman; echo ""; test_ocp ;;
   *)
     echo "Unknown target: $TARGET"
-    echo "Usage: $0 <podman|ocp|all> [--full] [--go]"
+    echo "Usage: $0 <podman|ocp|all> [--full]"
     exit 1
     ;;
 esac

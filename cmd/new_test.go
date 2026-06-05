@@ -86,8 +86,6 @@ FOO = "bar"
 	return dir
 }
 
-func noopScript(name string, args ...string) error { return nil }
-
 func TestNewLocal_NoGateway(t *testing.T) {
 	dir := setupTestProfile(t)
 	gw := &mockGW{inferenceErr: fmt.Errorf("connection refused")}
@@ -97,7 +95,6 @@ func TestNewLocal_NoGateway(t *testing.T) {
 		gw:          gw,
 		profileName: "default",
 		noTTY:       true,
-		runScript:   noopScript,
 	})
 	if err == nil {
 		t.Fatal("expected error")
@@ -107,28 +104,22 @@ func TestNewLocal_NoGateway(t *testing.T) {
 	}
 }
 
-func TestNewLocal_NoProviders_CallsScript(t *testing.T) {
+func TestNewLocal_NoProviders_RegistersProviders(t *testing.T) {
 	dir := setupTestProfile(t)
-	scriptCalled := false
+	os.MkdirAll(filepath.Join(dir, "sandbox", "profiles"), 0o755)
 	gw := &mockGW{
 		providerList: nil,
 		providers:    map[string]bool{},
 	}
 
-	newLocal(newLocalOpts{
+	err := newLocal(newLocalOpts{
 		harnessDir:  dir,
 		gw:          gw,
 		profileName: "default",
 		noTTY:       true,
-		runScript: func(name string, args ...string) error {
-			if name == "providers.sh" {
-				scriptCalled = true
-			}
-			return nil
-		},
 	})
-	if !scriptCalled {
-		t.Error("expected providers.sh to be called when no providers registered")
+	if err != nil {
+		t.Fatalf("newLocal: %v", err)
 	}
 }
 
@@ -144,7 +135,7 @@ func TestNewLocal_MissingProviders(t *testing.T) {
 		gw:          gw,
 		profileName: "default",
 		noTTY:       true,
-		runScript:   noopScript,
+
 	})
 	if err != nil {
 		t.Fatalf("newLocal: %v", err)
@@ -170,7 +161,7 @@ func TestNewLocal_AllProvidersMissing(t *testing.T) {
 		gw:          gw,
 		profileName: "default",
 		noTTY:       true,
-		runScript:   noopScript,
+
 	})
 	if err != nil {
 		t.Fatalf("newLocal: %v", err)
@@ -190,7 +181,7 @@ func TestNewLocal_ProfileNotFound(t *testing.T) {
 		gw:          gw,
 		profileName: "nonexistent",
 		noTTY:       true,
-		runScript:   noopScript,
+
 	})
 	if err == nil {
 		t.Fatal("expected error for missing profile")
@@ -210,7 +201,7 @@ func TestNewLocal_SandboxCreateRetry(t *testing.T) {
 		gw:          gw,
 		profileName: "default",
 		noTTY:       true,
-		runScript:   noopScript,
+
 		retrySleep:  0,
 	})
 	if err != nil {
@@ -237,7 +228,7 @@ func TestNewLocal_SandboxCreateOpts(t *testing.T) {
 		profileName: "default",
 		sandboxName: "custom-name",
 		noTTY:       true,
-		runScript:   noopScript,
+
 	})
 	if err != nil {
 		t.Fatalf("newLocal: %v", err)
