@@ -14,7 +14,7 @@ SANDBOX_IMAGE  := $(REGISTRY):sandbox
 LAUNCHER_IMAGE := $(REGISTRY):launcher
 
 .PHONY: cli sandbox push-sandbox cli-launcher launcher push-launcher \
-        vet lint test-unit test test-local test-ocp test-all validate clean help
+        vet lint test-unit test test-local test-ocp test-all validate validate-dev clean help
 
 ## ── CLI ──────────────────────────────────────────────────────────────
 
@@ -102,6 +102,33 @@ validate: cli sandbox push-launcher
 	@echo ""
 	@echo "=== Integration: OCP ==="
 	./test/test-flow.sh ocp --full
+
+## Dev validation: unit tests + bats + build images + full integration matrix.
+## Runs: local quick, local full, local CI (no providers), OCP quick, OCP full.
+## Requires: openshell gateway running locally, OCP cluster via KUBECONFIG.
+## Override registry: make validate-dev REGISTRY=quay.io/youruser/harness-openshell
+validate-dev: cli sandbox push-launcher
+	@echo "=== Unit tests ==="
+	CGO_ENABLED=0 go test ./...
+	cd sandbox/launcher && go test ./...
+	@echo ""
+	@echo "=== Bats ==="
+	bats test/preflight.bats
+	@echo ""
+	@echo "=== Integration: local (quick) ==="
+	./test/test-flow.sh local
+	@echo ""
+	@echo "=== Integration: local (full) ==="
+	./test/test-flow.sh local --full
+	@echo ""
+	@echo "=== Integration: local CI profile (no providers) ==="
+	./test/test-flow.sh local --full --no-providers --profile=ci
+	@echo ""
+	@echo "=== Integration: OCP (quick) ==="
+	SANDBOX_IMAGE=$(SANDBOX_IMAGE) LAUNCHER_IMAGE=$(LAUNCHER_IMAGE) ./test/test-flow.sh ocp
+	@echo ""
+	@echo "=== Integration: OCP (full) ==="
+	SANDBOX_IMAGE=$(SANDBOX_IMAGE) LAUNCHER_IMAGE=$(LAUNCHER_IMAGE) ./test/test-flow.sh ocp --full
 
 ## ── Convenience targets ───────────────────────────────────────────────
 
