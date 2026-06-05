@@ -10,26 +10,7 @@ import (
 
 	"github.com/robbycochran/harness-openshell/internal/k8s"
 	"github.com/robbycochran/harness-openshell/internal/status"
-	"github.com/spf13/cobra"
 )
-
-func NewCredsCmd(cli string) *cobra.Command {
-	var force bool
-
-	cmd := &cobra.Command{
-		Use:   "creds",
-		Short: "Set up cluster credentials (GWS, Atlassian)",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			namespace := k8s.DefaultNamespace()
-			kc := k8s.New("", namespace)
-			return ensureCreds(kc, namespace, force)
-		},
-	}
-
-	cmd.Flags().BoolVar(&force, "force", false, "Delete and recreate credentials")
-
-	return cmd
-}
 
 func ensureCreds(kc k8s.Runner, namespace string, force bool) error {
 	ctx := context.Background()

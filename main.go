@@ -39,7 +39,6 @@ func main() {
 		cmd.NewTeardownCmd(harnessDir, cli),
 		cmd.NewPreflightCmd(harnessDir, cli),
 		cmd.NewProvidersCmd(harnessDir, cli),
-		cmd.NewCredsCmd(cli),
 	)
 
 	if err := root.Execute(); err != nil {

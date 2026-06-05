@@ -209,7 +209,6 @@ test_ocp() {
     step "deploy" "$HARNESS" deploy --remote
   fi
 
-  step "setup creds" "$HARNESS" creds
   step "setup providers" "$HARNESS" providers
   step "gateway reachable" "$CLI" inference get
   check_providers
