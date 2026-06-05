@@ -11,6 +11,7 @@ import (
 
 	"github.com/robbycochran/harness-openshell/internal/gateway"
 	"github.com/robbycochran/harness-openshell/internal/k8s"
+	"github.com/robbycochran/harness-openshell/internal/preflight"
 	"github.com/robbycochran/harness-openshell/internal/profile"
 	"github.com/robbycochran/harness-openshell/internal/status"
 	"github.com/spf13/cobra"
@@ -280,7 +281,21 @@ func newLocal(opts newLocalOpts) error {
 		status.Warn("no providers available — run: harness providers")
 	}
 
-	// 5. Stage files
+	// 5. Inject non-secret provider env vars into sandbox env
+	providersPath := filepath.Join(opts.harnessDir, "providers.toml")
+	if allProviders, err := preflight.LoadProviders(providersPath); err == nil {
+		providerEnv := preflight.ProviderEnvVars(allProviders, cfg.Providers)
+		if cfg.Env == nil {
+			cfg.Env = make(map[string]string)
+		}
+		for k, v := range providerEnv {
+			if _, exists := cfg.Env[k]; !exists {
+				cfg.Env[k] = v
+			}
+		}
+	}
+
+	// 6. Stage files
 	// The upload preserves the source dir name as a subdirectory at the destination.
 	// startup.sh expects files at /sandbox/.config/openshell/sandbox.env, so the
 	// staging dir must be named "openshell".

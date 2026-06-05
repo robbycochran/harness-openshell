@@ -26,9 +26,10 @@ type Provider struct {
 }
 
 type Input struct {
-	Key    string `toml:"key"`
-	Kind   string `toml:"kind"`
-	Secret bool   `toml:"secret"`
+	Key     string `toml:"key"`
+	Kind    string `toml:"kind"`
+	Secret  bool   `toml:"secret"`
+	Sandbox bool   `toml:"sandbox"`
 }
 
 type ProvidersFile struct {
@@ -82,6 +83,31 @@ func EnabledProviders(all []Provider, config *ConfigFile) []Provider {
 		}
 	}
 	return result
+}
+
+// ProviderEnvVars returns environment variables marked with sandbox = true
+// for the named providers, resolved from the local environment. Only
+// includes env vars that are set.
+func ProviderEnvVars(providers []Provider, names []string) map[string]string {
+	wanted := make(map[string]bool, len(names))
+	for _, n := range names {
+		wanted[n] = true
+	}
+	env := make(map[string]string)
+	for _, p := range providers {
+		if !wanted[p.Name] {
+			continue
+		}
+		for _, inp := range p.Inputs {
+			if inp.Kind != "env" || !inp.Sandbox {
+				continue
+			}
+			if val := os.Getenv(inp.Key); val != "" {
+				env[inp.Key] = val
+			}
+		}
+	}
+	return env
 }
 
 func CheckInput(inp Input) (bool, string) {

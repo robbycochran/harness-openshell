@@ -17,5 +17,5 @@ ANTHROPIC_API_KEY = "sk-ant-openshell-proxy-managed"
 CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS = "1"
 GOOGLE_WORKSPACE_CLI_CONFIG_DIR = "/sandbox/.config/openshell"
 GOOGLE_WORKSPACE_CLI_CREDENTIALS_FILE = "/sandbox/.config/openshell/credentials.json"
-JIRA_URL = "https://redhat.atlassian.net"
-JIRA_USERNAME = "rcochran@redhat.com"
+# JIRA_URL and JIRA_USERNAME flow automatically from the local environment
+# when the atlassian provider is enabled (see providers.toml).
