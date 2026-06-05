@@ -4,7 +4,3 @@ linters:
   default: standard
   disable:
     - errcheck
-
-issues:
-  exclude-dirs:
-    - sandbox/launcher
