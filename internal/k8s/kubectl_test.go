@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -141,10 +142,10 @@ cat > `+stdinFile+`
 	}
 	data, _ := os.ReadFile(stdinFile)
 	content := string(data)
-	if !contains(content, "kind: ServiceAccount") {
+	if !strings.Contains(content, "kind: ServiceAccount") {
 		t.Errorf("YAML missing ServiceAccount: %s", content)
 	}
-	if !contains(content, "name: test-sa") {
+	if !strings.Contains(content, "name: test-sa") {
 		t.Errorf("YAML missing name: %s", content)
 	}
 }
@@ -278,15 +279,3 @@ func TestDefaultNamespace_Default(t *testing.T) {
 	}
 }
 
-func contains(s, substr string) bool {
-	return len(s) > 0 && len(substr) > 0 && s != substr && indexOf(s, substr) >= 0
-}
-
-func indexOf(s, substr string) int {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return i
-		}
-	}
-	return -1
-}

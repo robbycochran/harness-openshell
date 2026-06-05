@@ -320,5 +320,5 @@ func newLocal(opts newLocalOpts) error {
 		}
 		time.Sleep(opts.retrySleep)
 	}
-	return nil
+	return nil // unreachable but required by compiler
 }

@@ -1,6 +1,7 @@
 package preflight
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -186,19 +187,10 @@ func expandPath(p string) string {
 	return os.ExpandEnv(p)
 }
 
-func runQuiet(cmd string) bool {
-	ctx := exec.Command("bash", "-c", cmd)
-	ctx.Stdout = nil
-	ctx.Stderr = nil
-	done := make(chan error, 1)
-	go func() { done <- ctx.Run() }()
-	select {
-	case err := <-done:
-		return err == nil
-	case <-time.After(5 * time.Second):
-		ctx.Process.Kill()
-		return false
-	}
+func runQuiet(command string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return exec.CommandContext(ctx, "bash", "-c", command).Run() == nil
 }
 
 func pickKeys(m map[string]string, keys ...string) map[string]string {

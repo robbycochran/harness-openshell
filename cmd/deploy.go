@@ -183,16 +183,19 @@ func deployRemote(harnessDir string, gw gateway.Gateway, kc, clusterRunner k8s.R
 
 	// Wait for gateway to be reachable
 	fmt.Print("  Waiting for gateway...")
-	for i := range 30 {
+	var gwReachable bool
+	for range 30 {
 		if gw.InferenceGet() == nil {
+			gwReachable = true
 			status.OK("reachable")
 			break
 		}
 		time.Sleep(2 * time.Second)
 		fmt.Print(".")
-		if i == 29 {
-			status.Fail("timed out (try: openshell inference get)")
-		}
+	}
+	if !gwReachable {
+		fmt.Println()
+		return fmt.Errorf("gateway not reachable after 60s (try: openshell inference get)")
 	}
 
 	fmt.Println()

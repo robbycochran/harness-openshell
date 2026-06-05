@@ -79,12 +79,11 @@ func (c *Client) RunKubectlOpts(ctx context.Context, opts KubectlOpts) (string, 
 		}
 
 		var stdout, stderr bytes.Buffer
+		cmd.Stderr = &stderr
 		if opts.Quiet {
 			cmd.Stdout = io.Discard
-			cmd.Stderr = io.Discard
 		} else {
 			cmd.Stdout = &stdout
-			cmd.Stderr = &stderr
 		}
 
 		lastErr = cmd.Run()
@@ -92,18 +91,20 @@ func (c *Client) RunKubectlOpts(ctx context.Context, opts KubectlOpts) (string, 
 			return strings.TrimSpace(stdout.String()), nil
 		}
 
-		errOutput := stderr.String() + lastErr.Error()
+		errOutput := stderr.String() + " " + lastErr.Error()
 		if !isTransient(errOutput) {
-			return "", fmt.Errorf("kubectl %s: %s", strings.Join(opts.Args, " "), strings.TrimSpace(stderr.String()))
+			return "", fmt.Errorf("kubectl %s: %s", strings.Join(args, " "), strings.TrimSpace(stderr.String()))
 		}
 
 		if attempt < 2 {
 			delay := time.Duration(1<<uint(attempt)) * time.Second
 			time.Sleep(delay)
 			if opts.Stdin != nil {
-				if seeker, ok := opts.Stdin.(io.Seeker); ok {
-					seeker.Seek(0, io.SeekStart)
+				seeker, ok := opts.Stdin.(io.Seeker)
+				if !ok {
+					return "", fmt.Errorf("kubectl %s: transient error but stdin is not seekable for retry: %s", strings.Join(opts.Args, " "), strings.TrimSpace(stderr.String()))
 				}
+				seeker.Seek(0, io.SeekStart)
 			}
 		}
 	}
