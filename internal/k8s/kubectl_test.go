@@ -175,6 +175,109 @@ func TestIsTransient(t *testing.T) {
 	}
 }
 
+func TestRunKubectl_RetryExhausted(t *testing.T) {
+	dir := t.TempDir()
+	counterFile := filepath.Join(dir, "count")
+	os.WriteFile(counterFile, []byte("0"), 0o644)
+
+	writeStub(t, `#!/bin/bash
+COUNT=$(cat `+counterFile+`)
+COUNT=$((COUNT + 1))
+echo $COUNT > `+counterFile+`
+echo "connection refused" >&2
+exit 1
+`)
+	c := New("", "")
+	_, err := c.RunKubectl(context.Background(), "get", "pods")
+	if err == nil {
+		t.Error("expected error after retry exhaustion")
+	}
+	data, _ := os.ReadFile(counterFile)
+	if string(data) != "3\n" {
+		t.Errorf("expected 3 attempts, got %s", data)
+	}
+}
+
+func TestRunKubectlQuiet_DiscardsOutput(t *testing.T) {
+	writeStub(t, `#!/bin/bash
+echo "this should be discarded"
+echo "error output" >&2
+`)
+	c := New("", "")
+	err := c.RunKubectlQuiet(context.Background(), "get", "pods")
+	if err != nil {
+		t.Errorf("RunKubectlQuiet: %v", err)
+	}
+}
+
+func TestGetSecretField_Valid(t *testing.T) {
+	writeStub(t, `#!/bin/bash
+# Return base64-encoded "hello"
+echo -n "aGVsbG8="
+`)
+	c := New("", "default")
+	data, err := c.GetSecretField(context.Background(), "my-secret", "data-field")
+	if err != nil {
+		t.Fatalf("GetSecretField: %v", err)
+	}
+	if string(data) != "hello" {
+		t.Errorf("data = %q, want hello", string(data))
+	}
+}
+
+func TestGetSecretField_InvalidBase64(t *testing.T) {
+	writeStub(t, `#!/bin/bash
+echo -n "not-valid-base64!!!"
+`)
+	c := New("", "default")
+	_, err := c.GetSecretField(context.Background(), "my-secret", "field")
+	if err == nil {
+		t.Error("expected error for invalid base64")
+	}
+}
+
+func TestGetSecretField_Empty(t *testing.T) {
+	writeStub(t, `#!/bin/bash
+echo -n ""
+`)
+	c := New("", "default")
+	data, err := c.GetSecretField(context.Background(), "my-secret", "field")
+	if err != nil {
+		t.Fatalf("GetSecretField: %v", err)
+	}
+	if len(data) != 0 {
+		t.Errorf("expected empty, got %q", data)
+	}
+}
+
+func TestNamespaceExists(t *testing.T) {
+	writeStub(t, `#!/bin/bash
+[[ "$*" == *"my-ns"* ]] && exit 0
+exit 1
+`)
+	c := New("", "")
+	if !c.NamespaceExists(context.Background(), "my-ns") {
+		t.Error("expected namespace to exist")
+	}
+	if c.NamespaceExists(context.Background(), "missing-ns") {
+		t.Error("expected namespace to not exist")
+	}
+}
+
+func TestDefaultNamespace(t *testing.T) {
+	t.Setenv("OPENSHELL_NAMESPACE", "custom-ns")
+	if ns := DefaultNamespace(); ns != "custom-ns" {
+		t.Errorf("DefaultNamespace = %q, want custom-ns", ns)
+	}
+}
+
+func TestDefaultNamespace_Default(t *testing.T) {
+	t.Setenv("OPENSHELL_NAMESPACE", "")
+	if ns := DefaultNamespace(); ns != "openshell" {
+		t.Errorf("DefaultNamespace = %q, want openshell", ns)
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) > 0 && len(substr) > 0 && s != substr && indexOf(s, substr) >= 0
 }

@@ -308,3 +308,95 @@ func TestCLIPath_NotFound(t *testing.T) {
 		t.Errorf("CLIPath = %q, want empty", path)
 	}
 }
+
+func TestProviderCreate_Args(t *testing.T) {
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args")
+	bin := writeStub(t, `#!/bin/bash
+printf '%s\n' "$*" > `+argsFile+`
+`)
+	gw := NewCLI(bin)
+	gw.ProviderCreate("vertex-local", "google-vertex-ai", ProviderCreateOpts{
+		FromADC:     true,
+		Credentials: []string{"TOKEN=abc"},
+		Configs:     []string{"PROJECT=my-proj", "REGION=us-east5"},
+	})
+	data, _ := os.ReadFile(argsFile)
+	args := strings.TrimSpace(string(data))
+	for _, want := range []string{
+		"--name vertex-local",
+		"--type google-vertex-ai",
+		"--from-gcloud-adc",
+		"--credential TOKEN=abc",
+		"--config PROJECT=my-proj",
+		"--config REGION=us-east5",
+	} {
+		if !strings.Contains(args, want) {
+			t.Errorf("missing %q in: %s", want, args)
+		}
+	}
+}
+
+func TestInferenceSet_Args(t *testing.T) {
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args")
+	bin := writeStub(t, `#!/bin/bash
+printf '%s\n' "$*" > `+argsFile+`
+`)
+	gw := NewCLI(bin)
+	gw.InferenceSet("vertex-local", "claude-sonnet-4-6")
+	data, _ := os.ReadFile(argsFile)
+	args := strings.TrimSpace(string(data))
+	for _, want := range []string{
+		"inference set",
+		"--provider vertex-local",
+		"--model claude-sonnet-4-6",
+		"--no-verify",
+	} {
+		if !strings.Contains(args, want) {
+			t.Errorf("missing %q in: %s", want, args)
+		}
+	}
+}
+
+func TestGatewayAdd_Args(t *testing.T) {
+	dir := t.TempDir()
+	argsFile := filepath.Join(dir, "args")
+	bin := writeStub(t, `#!/bin/bash
+printf '%s\n' "$*" > `+argsFile+`
+`)
+	gw := NewCLI(bin)
+	gw.GatewayAdd("https://gw.example.com:443", "my-ocp", true)
+	data, _ := os.ReadFile(argsFile)
+	args := strings.TrimSpace(string(data))
+	for _, want := range []string{
+		"gateway add",
+		"https://gw.example.com:443",
+		"--name my-ocp",
+		"--local",
+	} {
+		if !strings.Contains(args, want) {
+			t.Errorf("missing %q in: %s", want, args)
+		}
+	}
+}
+
+func TestGatewayRemove(t *testing.T) {
+	bin := writeStub(t, `#!/bin/bash
+exit 0
+`)
+	gw := NewCLI(bin)
+	if err := gw.GatewayRemove("old-gw"); err != nil {
+		t.Errorf("GatewayRemove: %v", err)
+	}
+}
+
+func TestProviderProfileDelete(t *testing.T) {
+	bin := writeStub(t, `#!/bin/bash
+exit 0
+`)
+	gw := NewCLI(bin)
+	if err := gw.ProviderProfileDelete("profile-123"); err != nil {
+		t.Errorf("ProviderProfileDelete: %v", err)
+	}
+}
