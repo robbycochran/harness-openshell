@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/robbycochran/harness-openshell/internal/gateway"
+	"github.com/robbycochran/harness-openshell/internal/status"
 )
 
 func RunCheck(harnessDir string, gw gateway.Gateway, strict bool) error {
@@ -37,16 +38,16 @@ func RunCheck(harnessDir string, gw gateway.Gateway, strict bool) error {
 	cliPath := gw.CLIPath()
 	cliFound := cliPath != ""
 	if !cliFound {
-		fmt.Println("  ✗ not found on PATH")
+		status.Fail("not found on PATH")
 		hasFailures = true
 	} else {
 		ver := gw.CLIVersion()
 		if ver != "" {
-			fmt.Printf("  ✓ %s\n", ver)
+			status.OK(ver)
 		} else {
-			fmt.Println("  ✓ openshell")
+			status.OK("openshell")
 		}
-		fmt.Printf("    %s\n", cliPath)
+		status.Detail(cliPath)
 	}
 
 	// Detect active gateway
@@ -59,118 +60,109 @@ func RunCheck(harnessDir string, gw gateway.Gateway, strict bool) error {
 	// Gateway check
 	gwOK := false
 	if isK8s {
-		fmt.Println()
-		fmt.Println("=== K8s gateway ===")
+		status.Section("K8s gateway")
 		kubectlPath, _ := exec.LookPath("kubectl")
 		if kubectlPath == "" {
-			fmt.Println("  ✗ kubectl not found")
+			status.Fail("kubectl not found")
 			hasFailures = true
 		} else {
 			ctx := runOutput("kubectl", "config", "current-context")
 			if ctx != "" {
-				fmt.Printf("  ✓ Cluster: %s\n", ctx)
-
+				status.OKf("Cluster: %s", ctx)
 				if cliFound {
 					if gw.InferenceGet() == nil {
 						gwOK = true
 						model := gw.InferenceModel()
 						if model != "" {
-							fmt.Printf("  ✓ Gateway reachable (model: %s)\n", model)
+							status.OKf("Gateway reachable (model: %s)", model)
 						} else {
-							fmt.Println("  ✓ Gateway reachable")
+							status.OK("Gateway reachable")
 						}
 					} else {
-						fmt.Println("  ✗ Gateway unreachable")
+						status.Fail("Gateway unreachable")
 					}
 				}
 			} else {
-				fmt.Println("  ✗ No cluster (kubectl not configured)")
+				status.Fail("No cluster (kubectl not configured)")
 				hasFailures = true
 			}
 		}
 	} else {
-		fmt.Println()
-		fmt.Println("=== Podman gateway ===")
+		status.Section("Podman gateway")
 		if cliFound {
 			if gw.InferenceGet() == nil {
 				gwOK = true
 				model := gw.InferenceModel()
 				if model != "" {
-					fmt.Printf("  ✓ Reachable (model: %s)\n", model)
+					status.OKf("Reachable (model: %s)", model)
 				} else {
-					fmt.Println("  ✓ Reachable")
+					status.OK("Reachable")
 				}
 			} else {
-				fmt.Println("  - Not running")
+				status.Info("Not running")
 			}
 
 			podmanPath, _ := exec.LookPath("podman")
 			if podmanPath != "" {
 				ver := runOutput("podman", "--version")
-				fmt.Printf("  ✓ Podman: %s\n", ver)
+				status.OKf("Podman: %s", ver)
 			} else {
-				fmt.Println("  ✗ Podman not found")
+				status.Fail("Podman not found")
 				hasFailures = true
 			}
 		} else {
-			fmt.Println("  - CLI not available")
+			status.Info("CLI not available")
 		}
 	}
 
 	// Registered providers
 	if cliFound && gwOK {
-		fmt.Println()
 		gwLabel := "podman"
 		if isK8s {
 			gwLabel = "k8s"
 		}
-		fmt.Printf("=== Registered providers (%s) ===\n", gwLabel)
+		status.Section(fmt.Sprintf("Registered providers (%s)", gwLabel))
 		for _, p := range providers {
 			if p.Type != "openshell" {
 				continue
 			}
 			if gw.ProviderGet(p.Name) == nil {
-				fmt.Printf("  ✓ %s\n", p.Name)
+				status.OK(p.Name)
 			} else {
-				fmt.Printf("  ✗ %s: not registered — run ./setup-providers.sh\n", p.Name)
+				status.Failf("%s: not registered — run ./setup-providers.sh", p.Name)
 				hasFailures = true
 			}
 		}
 	}
 
 	// Provider inputs
-	fmt.Println()
-	fmt.Println("=== Provider inputs ===")
+	status.Section("Provider inputs")
 	for _, p := range providers {
 		ok, details := CheckProvider(p)
 		if ok {
-			fmt.Printf("  ✓ %s\n", p.Name)
+			status.OK(p.Name)
 		} else {
-			fmt.Printf("  ✗ %s\n", p.Name)
+			status.Fail(p.Name)
 			if p.Required {
 				hasFailures = true
 			}
 		}
-		fmt.Printf("    %s\n", p.Description)
+		status.Detail(p.Description)
 
 		for _, d := range details {
-			fmt.Printf("      %s\n", d)
+			status.Sub(d)
 		}
 
 		if p.Upstream != "" && !ok {
-			fmt.Printf("      upstream: %s\n", p.Upstream)
+			status.Sub(fmt.Sprintf("upstream: %s", p.Upstream))
 		}
 		fmt.Println()
 	}
 
 	// Summary
-	if hasFailures {
-		fmt.Println("✗ Not ready — fix issues above")
-		if strict {
-			os.Exit(1)
-		}
-	} else {
-		fmt.Println("✓ Ready to launch")
+	status.Summary(!hasFailures)
+	if hasFailures && strict {
+		os.Exit(1)
 	}
 	return nil
 }
