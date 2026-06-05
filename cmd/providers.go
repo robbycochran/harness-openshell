@@ -21,7 +21,7 @@ func NewProvidersCmd(harnessDir, cli string) *cobra.Command {
 		Use:   "providers",
 		Short: "Register providers with the gateway",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			gw := gateway.NewCLI(cli)
+			gw := gateway.New(cli)
 			return registerProviders(harnessDir, gw, force)
 		},
 	}

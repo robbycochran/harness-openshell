@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/robbycochran/harness-openshell/internal/status"
 	"gopkg.in/yaml.v3"
 )
 
@@ -68,6 +69,8 @@ func (c *Client) RunKubectlOpts(ctx context.Context, opts KubectlOpts) (string, 
 		args = append([]string{"--kubeconfig", c.kubeconfig}, args...)
 	}
 
+	status.Cmd("kubectl", args...)
+
 	var lastErr error
 	for attempt := range 3 {
 		cmd := exec.CommandContext(ctx, "kubectl", args...)
@@ -119,6 +122,7 @@ func (c *Client) RunKubectlPassthrough(ctx context.Context, args ...string) erro
 	if c.kubeconfig != "" {
 		args = append([]string{"--kubeconfig", c.kubeconfig}, args...)
 	}
+	status.Cmd("kubectl", args...)
 	cmd := exec.CommandContext(ctx, "kubectl", args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -133,6 +137,7 @@ func (c *Client) RunHelm(ctx context.Context, args ...string) (string, error) {
 	if c.kubeconfig != "" {
 		args = append(args, "--kubeconfig", c.kubeconfig)
 	}
+	status.Cmd("helm", args...)
 	cmd := exec.CommandContext(ctx, "helm", args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -144,6 +149,7 @@ func (c *Client) RunOC(ctx context.Context, args ...string) error {
 	if c.kubeconfig != "" {
 		args = append(args, "--kubeconfig", c.kubeconfig)
 	}
+	status.Cmd("oc", args...)
 	cmd := exec.CommandContext(ctx, "oc", args...)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard

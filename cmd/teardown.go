@@ -29,7 +29,7 @@ func NewTeardownCmd(harnessDir, cli string) *cobra.Command {
 				k8sFlag = true
 			}
 
-			gw := gateway.NewCLI(cli)
+			gw := gateway.New(cli)
 			activeGW := gw.ActiveGateway()
 
 			if activeGW != "" {

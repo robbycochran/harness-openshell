@@ -35,7 +35,7 @@ func NewNewCmd(harnessDir, cli string) *cobra.Command {
 				sandboxName = args[0]
 			}
 
-			gw := gateway.NewCLI(cli)
+			gw := gateway.New(cli)
 
 			if remote {
 				return newRemote(harnessDir, gw, profileName, sandboxName)

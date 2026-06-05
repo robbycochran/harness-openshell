@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"syscall"
+
+	"github.com/robbycochran/harness-openshell/internal/status"
 )
 
 var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
@@ -16,7 +18,7 @@ type CLI struct {
 	bin string // path or name of the openshell binary
 }
 
-func NewCLI(bin string) *CLI {
+func New(bin string) *CLI {
 	return &CLI{bin: bin}
 }
 
@@ -253,6 +255,7 @@ func (c *CLI) SandboxExec(name string, command ...string) error {
 
 // passthrough runs the CLI with stdin/stdout/stderr connected.
 func (c *CLI) passthrough(args ...string) error {
+	status.Cmd(c.bin, args...)
 	cmd := exec.Command(c.bin, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -262,6 +265,7 @@ func (c *CLI) passthrough(args ...string) error {
 
 // silent runs the CLI with all output discarded.
 func (c *CLI) silent(args ...string) error {
+	status.Cmd(c.bin, args...)
 	cmd := exec.Command(c.bin, args...)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
@@ -270,6 +274,7 @@ func (c *CLI) silent(args ...string) error {
 
 // output runs the CLI and returns stdout.
 func (c *CLI) output(args ...string) ([]byte, error) {
+	status.Cmd(c.bin, args...)
 	cmd := exec.Command(c.bin, args...)
 	cmd.Stderr = io.Discard
 	return cmd.Output()

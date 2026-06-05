@@ -22,7 +22,7 @@ func NewPreflightCmd(harnessDir, cli string) *cobra.Command {
 					return preflight.RunNames(harnessDir)
 				}
 			}
-			gw := gateway.NewCLI(cli)
+			gw := gateway.New(cli)
 			return preflight.RunCheck(harnessDir, gw, strict)
 		},
 	}

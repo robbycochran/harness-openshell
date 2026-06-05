@@ -1,6 +1,22 @@
 package status
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+)
+
+var Verbose bool
+
+func Cmd(name string, args ...string) {
+	if !Verbose {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "  $ %s", name)
+	for _, a := range args {
+		fmt.Fprintf(os.Stderr, " %s", a)
+	}
+	fmt.Fprintln(os.Stderr)
+}
 
 func OK(msg string)                  { fmt.Println("  ✓ " + msg) }
 func OKf(format string, a ...any)    { fmt.Printf("  ✓ "+format+"\n", a...) }

@@ -24,7 +24,7 @@ printf "github\tgithub\tactive\n"
 printf "vertex-local\tgoogle-vertex-ai\tactive\n"
 printf "atlassian\tatlassian\tactive\n"
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	names, err := gw.ProviderList()
 	if err != nil {
 		t.Fatalf("ProviderList: %v", err)
@@ -41,7 +41,7 @@ func TestProviderList_Empty(t *testing.T) {
 	bin := writeStub(t, `#!/bin/bash
 printf "NAME\tTYPE\tSTATUS\n"
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	names, err := gw.ProviderList()
 	if err != nil {
 		t.Fatalf("ProviderList: %v", err)
@@ -52,7 +52,7 @@ printf "NAME\tTYPE\tSTATUS\n"
 }
 
 func TestProviderList_CLINotFound(t *testing.T) {
-	gw := NewCLI("/nonexistent/openshell")
+	gw := New("/nonexistent/openshell")
 	_, err := gw.ProviderList()
 	if err == nil {
 		t.Error("expected error for missing CLI")
@@ -64,7 +64,7 @@ func TestProviderGet_Exists(t *testing.T) {
 [[ "$3" == "github" ]] && exit 0
 exit 1
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	if err := gw.ProviderGet("github"); err != nil {
 		t.Errorf("ProviderGet(github) = %v, want nil", err)
 	}
@@ -74,7 +74,7 @@ func TestProviderGet_Missing(t *testing.T) {
 	bin := writeStub(t, `#!/bin/bash
 exit 1
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	if err := gw.ProviderGet("nonexistent"); err == nil {
 		t.Error("ProviderGet(nonexistent) = nil, want error")
 	}
@@ -84,7 +84,7 @@ func TestInferenceGet_Active(t *testing.T) {
 	bin := writeStub(t, `#!/bin/bash
 exit 0
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	if err := gw.InferenceGet(); err != nil {
 		t.Errorf("InferenceGet = %v, want nil", err)
 	}
@@ -94,7 +94,7 @@ func TestInferenceGet_NoGateway(t *testing.T) {
 	bin := writeStub(t, `#!/bin/bash
 exit 1
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	if err := gw.InferenceGet(); err == nil {
 		t.Error("InferenceGet = nil, want error")
 	}
@@ -104,7 +104,7 @@ func TestSandboxCreate_ArgsMinimal(t *testing.T) {
 	bin := writeStub(t, `#!/bin/bash
 echo "$@" > /tmp/test-create-args
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	gw.SandboxCreate(SandboxCreateOpts{
 		Name: "test",
 		TTY:  false,
@@ -133,7 +133,7 @@ func TestSandboxCreate_ArgsFull(t *testing.T) {
 	bin := writeStub(t, `#!/bin/bash
 echo "$@" > `+argsFile+`
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	gw.SandboxCreate(SandboxCreateOpts{
 		Name:      "my-agent",
 		Image:     "quay.io/test:latest",
@@ -168,7 +168,7 @@ func TestSandboxDelete_Silent(t *testing.T) {
 	bin := writeStub(t, `#!/bin/bash
 exit 0
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	if err := gw.SandboxDelete("test"); err != nil {
 		t.Errorf("SandboxDelete = %v", err)
 	}
@@ -178,7 +178,7 @@ func TestSandboxDelete_NotFound(t *testing.T) {
 	bin := writeStub(t, `#!/bin/bash
 exit 1
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	if err := gw.SandboxDelete("missing"); err == nil {
 		t.Error("SandboxDelete = nil, want error")
 	}
@@ -190,7 +190,7 @@ printf "NAME\tENDPOINT\tTYPE\tAUTH\n"
 printf "  openshell\thttps://127.0.0.1:17670\tlocal\tmtls\n"
 printf "* openshell-remote-ocp\thttps://gw.example.com:443\tlocal\tmtls\n"
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	gateways, err := gw.GatewayList()
 	if err != nil {
 		t.Fatalf("GatewayList: %v", err)
@@ -215,7 +215,7 @@ printf "NAME\tPHASE\n"
 printf "\033[32magent\033[0m\tReady\n"
 printf "\033[32mtest-agent\033[0m\tReady\n"
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	names, err := gw.SandboxList()
 	if err != nil {
 		t.Fatalf("SandboxList: %v", err)
@@ -232,7 +232,7 @@ func TestSandboxList_Empty(t *testing.T) {
 	bin := writeStub(t, `#!/bin/bash
 printf "NAME\tPHASE\n"
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	names, err := gw.SandboxList()
 	if err != nil {
 		t.Fatalf("SandboxList: %v", err)
@@ -248,7 +248,7 @@ printf "NAME\tENDPOINT\n"
 printf "  local\thttps://127.0.0.1:17670\n"
 printf "* remote\thttps://gw.example.com\n"
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	active := gw.ActiveGateway()
 	if active != "remote" {
 		t.Errorf("ActiveGateway = %q, want remote", active)
@@ -260,7 +260,7 @@ func TestActiveGateway_None(t *testing.T) {
 printf "NAME\tENDPOINT\n"
 printf "  local\thttps://127.0.0.1:17670\n"
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	active := gw.ActiveGateway()
 	if active != "" {
 		t.Errorf("ActiveGateway = %q, want empty", active)
@@ -272,7 +272,7 @@ func TestInferenceModel_ParsesModel(t *testing.T) {
 echo "Provider: vertex-local"
 echo "Model: claude-sonnet-4-6"
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	model := gw.InferenceModel()
 	if model != "claude-sonnet-4-6" {
 		t.Errorf("InferenceModel = %q, want claude-sonnet-4-6", model)
@@ -283,7 +283,7 @@ func TestCLIVersion(t *testing.T) {
 	bin := writeStub(t, `#!/bin/bash
 echo "openshell v0.0.55"
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	ver := gw.CLIVersion()
 	if ver != "openshell v0.0.55" {
 		t.Errorf("CLIVersion = %q", ver)
@@ -294,7 +294,7 @@ func TestCLIPath(t *testing.T) {
 	bin := writeStub(t, `#!/bin/bash
 exit 0
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	path := gw.CLIPath()
 	if path == "" {
 		t.Error("CLIPath = empty, want non-empty")
@@ -302,7 +302,7 @@ exit 0
 }
 
 func TestCLIPath_NotFound(t *testing.T) {
-	gw := NewCLI("/nonexistent/openshell")
+	gw := New("/nonexistent/openshell")
 	path := gw.CLIPath()
 	if path != "" {
 		t.Errorf("CLIPath = %q, want empty", path)
@@ -315,7 +315,7 @@ func TestProviderCreate_Args(t *testing.T) {
 	bin := writeStub(t, `#!/bin/bash
 printf '%s\n' "$*" > `+argsFile+`
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	gw.ProviderCreate("vertex-local", "google-vertex-ai", ProviderCreateOpts{
 		FromADC:     true,
 		Credentials: []string{"TOKEN=abc"},
@@ -343,7 +343,7 @@ func TestInferenceSet_Args(t *testing.T) {
 	bin := writeStub(t, `#!/bin/bash
 printf '%s\n' "$*" > `+argsFile+`
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	gw.InferenceSet("vertex-local", "claude-sonnet-4-6")
 	data, _ := os.ReadFile(argsFile)
 	args := strings.TrimSpace(string(data))
@@ -365,7 +365,7 @@ func TestGatewayAdd_Args(t *testing.T) {
 	bin := writeStub(t, `#!/bin/bash
 printf '%s\n' "$*" > `+argsFile+`
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	gw.GatewayAdd("https://gw.example.com:443", "my-ocp", true)
 	data, _ := os.ReadFile(argsFile)
 	args := strings.TrimSpace(string(data))
@@ -385,7 +385,7 @@ func TestGatewayRemove(t *testing.T) {
 	bin := writeStub(t, `#!/bin/bash
 exit 0
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	if err := gw.GatewayRemove("old-gw"); err != nil {
 		t.Errorf("GatewayRemove: %v", err)
 	}
@@ -395,7 +395,7 @@ func TestProviderProfileDelete(t *testing.T) {
 	bin := writeStub(t, `#!/bin/bash
 exit 0
 `)
-	gw := NewCLI(bin)
+	gw := New(bin)
 	if err := gw.ProviderProfileDelete("profile-123"); err != nil {
 		t.Errorf("ProviderProfileDelete: %v", err)
 	}
