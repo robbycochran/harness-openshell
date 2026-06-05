@@ -13,8 +13,10 @@ func main() {
 	harnessDir := detectHarnessDir()
 
 	root := &cobra.Command{
-		Use:   "harness",
-		Short: "OpenShell Harness — deploy and manage AI agent sandboxes",
+		Use:           "harness",
+		Short:         "OpenShell Harness — deploy and manage AI agent sandboxes",
+		SilenceErrors: true,
+		SilenceUsage:  true,
 	}
 
 	cli := os.Getenv("OPENSHELL_CLI")

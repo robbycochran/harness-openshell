@@ -35,13 +35,13 @@ If `--name` is not provided, the sandbox name comes from the profile's `name` fi
 
 Reconnect to a running sandbox via `openshell sandbox connect`.
 
-### `harness deploy [--local|--remote]`
+### `harness deploy --local|--remote [--kubeconfig PATH]`
 
-Deploy or verify the gateway without creating a sandbox.
+Deploy or verify the gateway without creating a sandbox. Requires `--local` or `--remote`.
 
-**Local:** Find a gateway with endpoint `127.0.0.1`, select it, verify it responds.
+**Local:** Check podman installed, find a gateway with endpoint `127.0.0.1`, select it, verify it responds.
 
-**Remote:** Create namespace, install CRDs, grant SCCs, deploy Helm chart from OCI registry (`oci://ghcr.io/nvidia/openshell/helm-chart`), create TLS passthrough route, register CLI gateway with mTLS certs from the cluster.
+**Remote:** Create namespace, install CRDs, grant SCCs, deploy Helm chart from OCI registry (`oci://ghcr.io/nvidia/openshell/helm-chart`), create TLS passthrough route, register CLI gateway with mTLS certs from the cluster. `--kubeconfig` sets the kubeconfig path (or set `KUBECONFIG` env var).
 
 ### `harness teardown [--sandboxes] [--providers] [--k8s]`
 
@@ -51,13 +51,29 @@ Tear down resources. Default (no flags) tears down everything applicable.
 - `--providers` — delete all providers and inference config (requires no running sandboxes)
 - `--k8s` — Helm uninstall, delete CRDs, SCCs, secrets, namespace, and gateway config
 
-### `harness preflight`
+### `harness preflight [--strict]`
 
 Read-only environment check. Validates all inputs defined in `providers.toml` for each enabled provider in `openshell.toml`. Reports per-input status with `✓`/`✗` prefixes.
 
-### `harness providers`
+With `--strict`, exits non-zero if any `required` provider has missing inputs.
 
-Register credential providers with the gateway. Reads provider types and credentials from environment variables. Supports `--force` to delete and recreate all providers.
+Subcommands:
+- `harness preflight available` — print space-separated names of openshell-type providers where all inputs pass
+- `harness preflight names` — print space-separated names of all enabled openshell-type providers
+
+### `harness providers [--force]`
+
+Register credential providers with the gateway:
+
+1. Enables providers v2 via `openshell settings set`
+2. Imports custom provider profiles from `sandbox/profiles/`
+3. Registers each provider (github, vertex-local, atlassian) if the required env vars are set:
+   - `github` — requires `GITHUB_TOKEN`
+   - `vertex-local` — requires ADC file + project ID (`ANTHROPIC_VERTEX_PROJECT_ID` or fallback from ADC's `quota_project_id`). Sets inference model from `OPENSHELL_MODEL` (default: `claude-sonnet-4-6`).
+   - `atlassian` — requires `JIRA_API_TOKEN`
+4. Skips providers that already exist
+
+With `--force`: deletes existing providers and custom profiles before recreating. Requires no running sandboxes.
 
 ### `harness test [podman|ocp|all] [--full]`
 
@@ -230,11 +246,22 @@ The launcher connects to the gateway at `https://openshell.openshell.svc.cluster
 
 ---
 
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENSHELL_CLI` | `openshell` | Path or name of the openshell CLI binary |
+| `OPENSHELL_MODEL` | `claude-sonnet-4-6` | Inference model for `harness providers` |
+| `HARNESS_DIR` | auto-detected | Root directory of the harness project |
+| `OPENSHELL_NAMESPACE` | `openshell` | Kubernetes namespace for OCP deployments |
+
+---
+
 ## Testing
 
-### Unit Tests (`test/preflight.bats`)
+### Bats Tests (`test/preflight.bats`)
 
-29 bats tests covering the preflight check engine (`lib/providers.py`). Uses stubbed CLI, isolated temp dirs, and no gateway dependency. Tests:
+29 bats tests covering the preflight check engine. Runs against both the Python (`lib/providers.py`) and Go (`harness preflight`) implementations via `USE_GO=true`. Uses stubbed CLI, isolated temp dirs, and no gateway dependency. Tests:
 - env inputs (set/missing/secret/masked)
 - file inputs (exists/missing/metadata extraction)
 - check inputs (pass/fail/env expansion)
@@ -243,10 +270,18 @@ The launcher connects to the gateway at `https://openshell.openshell.svc.cluster
 - CLI detection (present/missing)
 - Gateway detection (podman/k8s)
 
+### Go Unit Tests
+
+- `internal/gateway/cli_test.go` — stub-based tests for CLI output parsing and argument building
+- `internal/profile/profile_test.go` — TOML parsing, env generation, provider validation with mock gateway
+- `cmd/new_test.go` — orchestration tests: no gateway, missing providers, retry logic, create opts
+- `sandbox/launcher/main_test.go` — launcher config parsing and file staging
+
 ### Integration Tests (`test/test-flow.sh`)
 
-End-to-end validation requiring a live gateway:
+End-to-end validation requiring a live gateway. Supports `--go` flag to test the Go binary instead of bash scripts:
 - Quick mode: deploy → providers → gateway check → teardown
 - Full mode: + sandbox create → verify env/GWS/MCP/Claude → delete → teardown
+- Error scenarios: bad profile, teardown idempotency, missing providers
 - Targets: `podman`, `ocp`, `all`
-- Strips ANSI codes from CLI output for reliable parsing
+- Test matrix: `{bash, go}` × `{podman, ocp}` via `make validate`

@@ -13,8 +13,9 @@ import (
 
 func NewDeployCmd(harnessDir, cli string) *cobra.Command {
 	var (
-		local  bool
-		remote bool
+		local      bool
+		remote     bool
+		kubeconfig string
 	)
 
 	cmd := &cobra.Command{
@@ -22,7 +23,11 @@ func NewDeployCmd(harnessDir, cli string) *cobra.Command {
 		Short: "Deploy or verify the gateway",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if remote {
-				return runner.RunScript(harnessDir, "deploy.sh", "--remote")
+				scriptArgs := []string{"--remote"}
+				if kubeconfig != "" {
+					scriptArgs = append(scriptArgs, "--kubeconfig", kubeconfig)
+				}
+				return runner.RunScript(harnessDir, "deploy.sh", scriptArgs...)
 			}
 			if local {
 				gw := gateway.NewCLI(cli)
@@ -34,6 +39,7 @@ func NewDeployCmd(harnessDir, cli string) *cobra.Command {
 
 	cmd.Flags().BoolVar(&local, "local", false, "Verify local podman gateway")
 	cmd.Flags().BoolVar(&remote, "remote", false, "Deploy to OpenShift cluster")
+	cmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig (remote only)")
 
 	return cmd
 }
@@ -79,7 +85,9 @@ func deployLocal(gw gateway.Gateway) error {
 		return fmt.Errorf("no local gateway")
 	}
 
-	gw.GatewaySelect(localGW)
+	if err := gw.GatewaySelect(localGW); err != nil {
+		return fmt.Errorf("selecting gateway %s: %w", localGW, err)
+	}
 
 	if gw.InferenceGet() == nil {
 		status.OKf("%s (active, reachable)", localGW)

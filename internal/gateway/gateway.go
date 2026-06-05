@@ -29,6 +29,7 @@ type Gateway interface {
 	ProviderCreate(name, providerType string, opts ProviderCreateOpts) error
 	ProviderDelete(name string) error
 	ProviderProfileImport(dir string) error
+	ProviderProfileDelete(id string) error
 
 	// Inference config
 	InferenceSet(provider, model string) error

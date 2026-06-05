@@ -32,6 +32,7 @@ func (m *mockGateway) ActiveGateway() string                                    
 func (m *mockGateway) ProviderCreate(string, string, gateway.ProviderCreateOpts) error { return nil }
 func (m *mockGateway) ProviderDelete(string) error                                   { return nil }
 func (m *mockGateway) ProviderProfileImport(string) error                            { return nil }
+func (m *mockGateway) ProviderProfileDelete(string) error                            { return nil }
 func (m *mockGateway) ProviderList() ([]string, error)                               { return nil, nil }
 func (m *mockGateway) SettingsSet(string, string) error                              { return nil }
 func (m *mockGateway) SandboxList() ([]string, error)                                { return nil, nil }

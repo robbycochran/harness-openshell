@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/robbycochran/harness-openshell/internal/gateway"
 	"github.com/robbycochran/harness-openshell/internal/status"
@@ -43,6 +45,7 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool) error 
 		for _, name := range []string{"github", "vertex-local", "atlassian"} {
 			gw.ProviderDelete(name)
 		}
+		deleteCustomProfiles(harnessDir, gw)
 		fmt.Println("Deleted existing providers.")
 	}
 
@@ -137,14 +140,53 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool) error 
 
 	// Show results
 	status.Section("Providers")
-	gw.ProviderList()
+	names, _ := gw.ProviderList()
+	for _, n := range names {
+		status.OK(n)
+	}
 
 	status.Section("Inference")
-	gw.InferenceGet()
+	m := gw.InferenceModel()
+	if m != "" {
+		status.OKf("Model: %s", m)
+	}
 
 	fmt.Println()
-	fmt.Println("Done.")
+	fmt.Println("Done. Launch a sandbox with: harness new --local")
 	return nil
+}
+
+func deleteCustomProfiles(harnessDir string, gw gateway.Gateway) {
+	profilesDir := filepath.Join(harnessDir, "sandbox", "profiles")
+	entries, err := os.ReadDir(profilesDir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+			continue
+		}
+		id := extractYAMLID(filepath.Join(profilesDir, e.Name()))
+		if id != "" {
+			gw.ProviderProfileDelete(id)
+		}
+	}
+}
+
+func extractYAMLID(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "id:") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "id:"))
+		}
+	}
+	return ""
 }
 
 func readADCProject(path string) string {

@@ -50,6 +50,7 @@ func (m *mockGW) ActiveGateway() string                                         
 func (m *mockGW) ProviderCreate(string, string, gateway.ProviderCreateOpts) error { return nil }
 func (m *mockGW) ProviderDelete(string) error                                   { return nil }
 func (m *mockGW) ProviderProfileImport(string) error                            { return nil }
+func (m *mockGW) ProviderProfileDelete(string) error                            { return nil }
 func (m *mockGW) SettingsSet(string, string) error                              { return nil }
 func (m *mockGW) SandboxList() ([]string, error)                                { return nil, nil }
 func (m *mockGW) SandboxConnect(string) error                                   { return nil }
