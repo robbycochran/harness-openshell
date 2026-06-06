@@ -8,11 +8,11 @@ import (
 	"testing"
 )
 
-func TestNewLocal_NoGateway(t *testing.T) {
+func TestUpLocal_NoGateway(t *testing.T) {
 	dir := setupTestProfile(t)
 	gw := &mockGW{inferenceErr: fmt.Errorf("connection refused")}
 
-	err := newLocal(newLocalOpts{
+	err := upLocal(upLocalOpts{
 		harnessDir:  dir,
 		gw:          gw,
 		profileName: "default",
@@ -26,7 +26,7 @@ func TestNewLocal_NoGateway(t *testing.T) {
 	}
 }
 
-func TestNewLocal_NoProviders_RegistersProviders(t *testing.T) {
+func TestUpLocal_NoProviders_RegistersProviders(t *testing.T) {
 	dir := setupTestProfile(t)
 	os.MkdirAll(filepath.Join(dir, "sandbox", "profiles"), 0o755)
 	gw := &mockGW{
@@ -34,25 +34,25 @@ func TestNewLocal_NoProviders_RegistersProviders(t *testing.T) {
 		providers:    map[string]bool{},
 	}
 
-	err := newLocal(newLocalOpts{
+	err := upLocal(upLocalOpts{
 		harnessDir:  dir,
 		gw:          gw,
 		profileName: "default",
 		noTTY:       true,
 	})
 	if err != nil {
-		t.Fatalf("newLocal: %v", err)
+		t.Fatalf("upLocal: %v", err)
 	}
 }
 
-func TestNewLocal_MissingProviders(t *testing.T) {
+func TestUpLocal_MissingProviders(t *testing.T) {
 	dir := setupTestProfile(t)
 	gw := &mockGW{
 		providerList: []string{"github"},
 		providers:    map[string]bool{"github": true},
 	}
 
-	err := newLocal(newLocalOpts{
+	err := upLocal(upLocalOpts{
 		harnessDir:  dir,
 		gw:          gw,
 		profileName: "default",
@@ -60,7 +60,7 @@ func TestNewLocal_MissingProviders(t *testing.T) {
 
 	})
 	if err != nil {
-		t.Fatalf("newLocal: %v", err)
+		t.Fatalf("upLocal: %v", err)
 	}
 	if gw.createCalls != 1 {
 		t.Fatalf("createCalls = %d, want 1", gw.createCalls)
@@ -71,14 +71,14 @@ func TestNewLocal_MissingProviders(t *testing.T) {
 	}
 }
 
-func TestNewLocal_AllProvidersMissing(t *testing.T) {
+func TestUpLocal_AllProvidersMissing(t *testing.T) {
 	dir := setupTestProfile(t)
 	gw := &mockGW{
 		providerList: []string{"github"},
 		providers:    map[string]bool{},
 	}
 
-	err := newLocal(newLocalOpts{
+	err := upLocal(upLocalOpts{
 		harnessDir:  dir,
 		gw:          gw,
 		profileName: "default",
@@ -86,7 +86,7 @@ func TestNewLocal_AllProvidersMissing(t *testing.T) {
 
 	})
 	if err != nil {
-		t.Fatalf("newLocal: %v", err)
+		t.Fatalf("upLocal: %v", err)
 	}
 	opts := gw.createOpts[0]
 	if len(opts.Providers) != 0 {
@@ -94,11 +94,11 @@ func TestNewLocal_AllProvidersMissing(t *testing.T) {
 	}
 }
 
-func TestNewLocal_ProfileNotFound(t *testing.T) {
+func TestUpLocal_ProfileNotFound(t *testing.T) {
 	dir := setupTestProfile(t)
 	gw := &mockGW{providerList: []string{"github"}}
 
-	err := newLocal(newLocalOpts{
+	err := upLocal(upLocalOpts{
 		harnessDir:  dir,
 		gw:          gw,
 		profileName: "nonexistent",
@@ -110,7 +110,7 @@ func TestNewLocal_ProfileNotFound(t *testing.T) {
 	}
 }
 
-func TestNewLocal_SandboxCreateRetry(t *testing.T) {
+func TestUpLocal_SandboxCreateRetry(t *testing.T) {
 	dir := setupTestProfile(t)
 	gw := &mockGW{
 		providerList: []string{"github"},
@@ -118,7 +118,7 @@ func TestNewLocal_SandboxCreateRetry(t *testing.T) {
 		createErr:    fmt.Errorf("supervisor race"),
 	}
 
-	err := newLocal(newLocalOpts{
+	err := upLocal(upLocalOpts{
 		harnessDir:  dir,
 		gw:          gw,
 		profileName: "default",
@@ -127,7 +127,7 @@ func TestNewLocal_SandboxCreateRetry(t *testing.T) {
 		retrySleep:  0,
 	})
 	if err != nil {
-		t.Fatalf("newLocal: %v", err)
+		t.Fatalf("upLocal: %v", err)
 	}
 	if gw.createCalls != 2 {
 		t.Errorf("createCalls = %d, want 2 (first fails, second succeeds)", gw.createCalls)
@@ -137,14 +137,14 @@ func TestNewLocal_SandboxCreateRetry(t *testing.T) {
 	}
 }
 
-func TestNewLocal_SandboxCreateOpts(t *testing.T) {
+func TestUpLocal_SandboxCreateOpts(t *testing.T) {
 	dir := setupTestProfile(t)
 	gw := &mockGW{
 		providerList: []string{"github", "vertex-local"},
 		providers:    map[string]bool{"github": true, "vertex-local": true},
 	}
 
-	err := newLocal(newLocalOpts{
+	err := upLocal(upLocalOpts{
 		harnessDir:  dir,
 		gw:          gw,
 		profileName: "default",
@@ -153,7 +153,7 @@ func TestNewLocal_SandboxCreateOpts(t *testing.T) {
 
 	})
 	if err != nil {
-		t.Fatalf("newLocal: %v", err)
+		t.Fatalf("upLocal: %v", err)
 	}
 	opts := gw.createOpts[0]
 	if opts.Name != "custom-name" {

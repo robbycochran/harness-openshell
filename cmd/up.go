@@ -17,7 +17,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewNewCmd(harnessDir, cli string) *cobra.Command {
+func NewUpCmd(harnessDir, cli string) *cobra.Command {
 	var (
 		local       bool
 		remote      bool
@@ -27,9 +27,9 @@ func NewNewCmd(harnessDir, cli string) *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "new [flags]",
-		Short: "Create a new sandbox",
-		Long:  "Deploy gateway and providers if needed, then create a sandbox from a profile.",
+		Use:   "up [flags]",
+		Short: "Deploy gateway, register providers, and create a sandbox",
+		Long:  "Deploy gateway and register providers if needed, then create a sandbox from a profile.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if local && remote {
 				return fmt.Errorf("--local and --remote are mutually exclusive")
@@ -49,9 +49,9 @@ func NewNewCmd(harnessDir, cli string) *cobra.Command {
 			gwCfg, _ := gateway.LoadConfig(gwDir) // nil is fine — backward compat
 
 			if remote {
-				return newRemote(harnessDir, gwCfg, gw, profileName, sandboxName)
+				return upRemote(harnessDir, gwCfg, gw, profileName, sandboxName)
 			}
-			return newLocal(newLocalOpts{
+			return upLocal(upLocalOpts{
 				harnessDir:  harnessDir,
 				gw:          gw,
 				gwCfg:       gwCfg,
@@ -73,7 +73,7 @@ func NewNewCmd(harnessDir, cli string) *cobra.Command {
 	return cmd
 }
 
-type newLocalOpts struct {
+type upLocalOpts struct {
 	harnessDir  string
 	gw          gateway.Gateway
 	gwCfg       *gateway.GatewayConfig
@@ -84,7 +84,7 @@ type newLocalOpts struct {
 	retrySleep  time.Duration
 }
 
-func newRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gateway, profileName, sandboxName string) error {
+func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gateway, profileName, sandboxName string) error {
 	ctx := context.Background()
 	namespace := k8s.DefaultNamespace()
 	kc := k8s.New("", namespace)
@@ -267,7 +267,7 @@ func newRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gatew
 	return fmt.Errorf("launcher job failed (status: %s) — check: kubectl logs -n %s -l job-name=%s", jobStatus, namespace, jobName)
 }
 
-func newLocal(opts newLocalOpts) error {
+func upLocal(opts upLocalOpts) error {
 	gw := opts.gw
 
 	// 1. Ensure gateway

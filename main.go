@@ -33,7 +33,7 @@ func main() {
 	}
 
 	root.AddCommand(
-		cmd.NewNewCmd(harnessDir, cli),
+		cmd.NewUpCmd(harnessDir, cli),
 		cmd.NewConnectCmd(cli),
 		cmd.NewDeployCmd(harnessDir, cli),
 		cmd.NewTeardownCmd(harnessDir, cli),
