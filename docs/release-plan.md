@@ -108,7 +108,7 @@ harness init
 ```bash
 git clone ... && cd harness-openshell
 make cli
-./harness new --local
+./harness up --local
 ```
 
 ---

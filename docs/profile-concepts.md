@@ -135,7 +135,7 @@ prerequisites (inputs)    which providers to      get imported into the
 ```
 
 1. `harness providers` registers providers with the gateway (using `providers.toml` inputs)
-2. `harness new --profile NAME` reads `profiles/NAME.toml`, validates its `providers` list against the gateway, creates the sandbox
+2. `harness up --profile NAME` (or `harness create --profile NAME`) reads `profiles/NAME.toml`, validates its `providers` list against the gateway, creates the sandbox
 3. Custom providers (like `gws`) bypass the gateway entirely — files are uploaded directly
 
 ### Current limitations that motivated this analysis

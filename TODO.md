@@ -4,8 +4,9 @@
 
 | Command | Go Status | Notes |
 |---------|-----------|-------|
-| `new --local` | Native | Profile parsing, provider validation, sandbox create with retry |
-| `new --remote` | Native | K8s Job YAML via internal/k8s, prerequisite chain (deploy+providers+creds) |
+| `up --local` | Native | Full flow: deploy + providers + sandbox create with retry |
+| `up --remote` | Native | K8s Job YAML via internal/k8s, prerequisite chain (deploy+providers+creds) |
+| `create` | Native | Sandbox creation only (no deploy/providers) |
 | `connect` | Native | exec into `openshell sandbox connect` |
 | `deploy --local` | Native | Podman check, gateway find/select/verify |
 | `deploy --remote` | Native | Helm install, Route, mTLS, RBAC, SCCs via internal/k8s |
@@ -17,7 +18,7 @@
 | `test` | Bash | test-flow.sh orchestration (intentionally stays bash) |
 | **Launcher** | Native | In-cluster Go binary, UBI9 + openssh |
 
-**Score: 11/12 paths native Go.** Only `test` stays bash (test orchestration, not a user command).
+**Score: 12/13 paths native Go.** Only `test` stays bash (test orchestration, not a user command).
 
 ## Architecture Improvements
 
@@ -62,7 +63,7 @@ name, image, command, keep, providers, [env]
 ### Changes
 
 - [ ] Add `description` field — one line of human-readable context per profile.
-      Makes multi-profile use cases (`harness new --profile research`) self-documenting.
+      Makes multi-profile use cases (`harness up --profile research`) self-documenting.
       Both OpenShell and Kaiden include this.
 
 - [ ] Split `[env]` by purpose — the current `[env]` map mixes inference config

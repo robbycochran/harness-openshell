@@ -137,6 +137,72 @@ func TestUpLocal_SandboxCreateRetry(t *testing.T) {
 	}
 }
 
+func TestCreate_NoGateway(t *testing.T) {
+	dir := setupTestProfile(t)
+	gw := &mockGW{inferenceErr: fmt.Errorf("connection refused")}
+
+	err := upLocal(upLocalOpts{
+		harnessDir:  dir,
+		gw:          gw,
+		ensureLocal: false,
+		profileName: "default",
+		noTTY:       true,
+	})
+	if err == nil {
+		t.Fatal("expected error when gateway is not running")
+	}
+	if !strings.Contains(err.Error(), "no active gateway") {
+		t.Errorf("error = %q, want 'no active gateway'", err)
+	}
+}
+
+func TestCreate_WithGateway(t *testing.T) {
+	dir := setupTestProfile(t)
+	gw := &mockGW{
+		providerList: []string{"github"},
+		providers:    map[string]bool{"github": true},
+	}
+
+	err := upLocal(upLocalOpts{
+		harnessDir:  dir,
+		gw:          gw,
+		ensureLocal: false,
+		profileName: "default",
+		sandboxName: "create-test",
+		noTTY:       true,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if gw.createCalls != 1 {
+		t.Fatalf("createCalls = %d, want 1", gw.createCalls)
+	}
+	opts := gw.createOpts[0]
+	if opts.Name != "create-test" {
+		t.Errorf("Name = %q, want create-test", opts.Name)
+	}
+}
+
+func TestCreate_SkipsProviderRegistration(t *testing.T) {
+	dir := setupTestProfile(t)
+	os.MkdirAll(filepath.Join(dir, "sandbox", "profiles"), 0o755)
+	gw := &mockGW{
+		providerList: nil,
+		providers:    map[string]bool{},
+	}
+
+	err := upLocal(upLocalOpts{
+		harnessDir:  dir,
+		gw:          gw,
+		ensureLocal: false,
+		profileName: "default",
+		noTTY:       true,
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+}
+
 func TestUpLocal_SandboxCreateOpts(t *testing.T) {
 	dir := setupTestProfile(t)
 	gw := &mockGW{
