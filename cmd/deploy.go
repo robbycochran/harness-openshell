@@ -181,9 +181,8 @@ func deployFromConfig(harnessDir string, gwCfg *gateway.GatewayConfig, gw gatewa
 		for _, sa := range gwCfg.OCP.SCCAnyuid {
 			kc.RunOC(ctx, "adm", "policy", "add-scc-to-user", "anyuid", "-z", sa, "-n", namespace)
 		}
-		clusterRunner.RunKubectl(ctx, "create", "clusterrolebinding", "agent-sandbox-admin",
-			"--clusterrole=cluster-admin",
-			"--serviceaccount=agent-sandbox-system:agent-sandbox-controller")
+		// The sandbox controller ClusterRole and ClusterRoleBinding are
+		// included in the upstream manifest.yaml applied in step 2.
 	}
 
 	// Addon manifests (RBAC, etc.)
@@ -249,7 +248,10 @@ func deployFromConfig(harnessDir string, gwCfg *gateway.GatewayConfig, gw gatewa
 		return fmt.Errorf("service type %q endpoint resolution not yet implemented", gwCfg.Gateway.Service)
 	}
 
-	existing, _ := gw.GatewayList()
+	existing, err := gw.GatewayList()
+	if err != nil {
+		return fmt.Errorf("listing existing gateways: %w", err)
+	}
 	for _, g := range existing {
 		if routeHost != "" && strings.Contains(g.Endpoint, routeHost) {
 			gw.GatewayRemove(g.Name)

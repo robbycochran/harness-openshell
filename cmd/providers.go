@@ -53,7 +53,10 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool, gwCfg 
 
 	// Force mode: require no running sandboxes
 	if force {
-		sandboxes, _ := gw.SandboxList()
+		sandboxes, err := gw.SandboxList()
+		if err != nil {
+			return fmt.Errorf("listing sandboxes: %w", err)
+		}
 		if len(sandboxes) > 0 {
 			return fmt.Errorf("cannot --force with running sandboxes — delete them first")
 		}
@@ -94,7 +97,10 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool, gwCfg 
 
 	// Show results
 	status.Section("Providers")
-	names, _ := gw.ProviderList()
+	names, err := gw.ProviderList()
+	if err != nil {
+		return fmt.Errorf("listing providers: %w", err)
+	}
 	for _, n := range names {
 		status.OK(n)
 	}

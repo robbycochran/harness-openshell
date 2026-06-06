@@ -102,7 +102,10 @@ func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gatewa
 	}
 
 	// 2. Ensure providers
-	providers, _ := gw.ProviderList()
+	providers, err := gw.ProviderList()
+	if err != nil {
+		return fmt.Errorf("listing providers: %w", err)
+	}
 	if len(providers) == 0 {
 		status.Section("Registering providers")
 		if err := registerProviders(harnessDir, gw, false, gwCfg); err != nil {
@@ -243,8 +246,11 @@ func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gatewa
 	var jobStatus string
 	deadline := time.Now().Add(10 * time.Minute)
 	for time.Now().Before(deadline) {
-		jobStatus, _ = kc.RunKubectl(ctx, "get", "job", jobName,
+		jobStatus, err = kc.RunKubectl(ctx, "get", "job", jobName,
 			"-o", "jsonpath={.status.conditions[0].type}")
+		if err != nil {
+			return fmt.Errorf("checking launcher job status: %w", err)
+		}
 		if jobStatus == "Complete" || jobStatus == "Failed" || jobStatus == "SuccessCriteriaMet" {
 			break
 		}
@@ -283,7 +289,10 @@ func upLocal(opts upLocalOpts) error {
 	}
 
 	// 2. Ensure providers
-	providers, _ := gw.ProviderList()
+	providers, err := gw.ProviderList()
+	if err != nil {
+		return fmt.Errorf("listing providers: %w", err)
+	}
 	if len(providers) == 0 {
 		status.Section("Registering providers")
 		if err := registerProviders(opts.harnessDir, gw, false, opts.gwCfg); err != nil {
