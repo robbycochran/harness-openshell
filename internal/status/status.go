@@ -3,6 +3,7 @@ package status
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 var Verbose bool
@@ -12,10 +13,55 @@ func Cmd(name string, args ...string) {
 		return
 	}
 	fmt.Fprintf(os.Stderr, "  $ %s", name)
+	redactNext := false
 	for _, a := range args {
+		if redactNext {
+			fmt.Fprintf(os.Stderr, " %s", redactValue(a))
+			redactNext = false
+			continue
+		}
+		if a == "--credential" {
+			redactNext = true
+			fmt.Fprintf(os.Stderr, " %s", a)
+			continue
+		}
+		if strings.HasPrefix(a, "--from-literal=") && isSensitiveLiteral(a) {
+			fmt.Fprintf(os.Stderr, " %s", redactFromLiteral(a))
+			continue
+		}
 		fmt.Fprintf(os.Stderr, " %s", a)
 	}
 	fmt.Fprintln(os.Stderr)
+}
+
+// redactValue replaces the value portion of KEY=VALUE with ***.
+func redactValue(s string) string {
+	if i := strings.IndexByte(s, '='); i >= 0 {
+		return s[:i+1] + "***"
+	}
+	return s
+}
+
+// isSensitiveLiteral checks if a --from-literal=KEY=VALUE arg contains a secret key.
+func isSensitiveLiteral(s string) bool {
+	upper := strings.ToUpper(s)
+	for _, keyword := range []string{"TOKEN", "SECRET", "PASSWORD", "KEY", "CREDENTIAL"} {
+		if strings.Contains(upper, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+// redactFromLiteral redacts the value in --from-literal=KEY=VALUE.
+func redactFromLiteral(s string) string {
+	// s is "--from-literal=KEY=VALUE", find the second '='
+	prefix := "--from-literal="
+	rest := s[len(prefix):]
+	if i := strings.IndexByte(rest, '='); i >= 0 {
+		return prefix + rest[:i+1] + "***"
+	}
+	return s
 }
 
 func OK(msg string)                  { fmt.Println("  ✓ " + msg) }

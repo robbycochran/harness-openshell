@@ -36,7 +36,7 @@ manifests = ["addons/rbac.yaml", "addons/route.yaml"]
 launcher = "ghcr.io/robbycochran/harness-openshell:launcher"
 
 [ocp]
-scc-privileged = ["openshell", "openshell-sandbox", "default"]
+scc-privileged = ["openshell", "openshell-sandbox"]
 scc-anyuid = ["openshell"]
 
 [secrets]

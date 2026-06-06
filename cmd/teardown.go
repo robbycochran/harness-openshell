@@ -108,7 +108,10 @@ func teardownProviders(gw gateway.Gateway, activeGW string) error {
 	if len(remaining) > 0 {
 		// Sandbox may be mid-deletion — wait briefly and retry
 		time.Sleep(2 * time.Second)
-		remaining, _ = gw.SandboxList()
+		remaining, err = gw.SandboxList()
+		if err != nil {
+			return fmt.Errorf("rechecking sandboxes: %w", err)
+		}
 		if len(remaining) > 0 {
 			return fmt.Errorf("cannot delete providers with running sandboxes — run: harness teardown --sandboxes")
 		}
@@ -191,6 +194,7 @@ func teardownK8s(gw gateway.Gateway, gwCfg *gateway.GatewayConfig, kc, clusterRu
 	for _, sa := range sccAnyuid {
 		kc.RunOC(ctx, "adm", "policy", "remove-scc-from-user", "anyuid", "-z", sa, "-n", namespace)
 	}
+	// Clean up legacy cluster-admin binding (no longer created, but may exist from earlier deploys)
 	clusterRunner.RunKubectl(ctx, "delete", "clusterrolebinding", "agent-sandbox-admin")
 	status.Info("Cleared")
 
@@ -217,7 +221,11 @@ func teardownK8s(gw gateway.Gateway, gwCfg *gateway.GatewayConfig, kc, clusterRu
 	// Gateway config cleanup
 	fmt.Println()
 	status.Section("Gateway config")
-	gateways, _ := gw.GatewayList()
+	gateways, err := gw.GatewayList()
+	if err != nil {
+		status.Failf("listing gateways: %v", err)
+		return
+	}
 	for _, g := range gateways {
 		if !strings.Contains(g.Endpoint, "127.0.0.1") {
 			if err := gw.GatewayRemove(g.Name); err == nil {
