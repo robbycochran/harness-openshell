@@ -153,7 +153,7 @@ test_errors() {
   echo "=== test: error scenarios ==="
 
   # Bad profile
-  step_fail "nonexistent profile" "$HARNESS" new --local --profile nonexistent --no-tty
+  step_fail "nonexistent profile" "$HARNESS" up --local --profile nonexistent --no-tty
 
   # Teardown idempotency (skip k8s teardown when reusing gateway)
   if $REUSE_GATEWAY; then
@@ -188,16 +188,22 @@ test_local() {
 
   if $FULL; then
     local sandbox_name="test-agent"
-    step_output "sandbox create" "$HARNESS" new --local --name "$sandbox_name" --profile "$PROFILE" --no-tty
+    step_output "sandbox create (up)" "$HARNESS" up --local --name "$sandbox_name" --profile "$PROFILE" --no-tty
     sandbox_verify "$sandbox_name"
     step "sandbox delete" "$CLI" sandbox delete "$sandbox_name"
+
+    # Test harness create (non-interactive sandbox creation without deploy/providers)
+    local create_name="test-create"
+    step_output "sandbox create (create)" "$HARNESS" create --name "$create_name" --profile "$PROFILE"
+    step "sandbox verify (create)" "$CLI" sandbox exec --name "$create_name" -- echo "hello"
+    step "sandbox delete (create)" "$CLI" sandbox delete "$create_name"
 
     if ! $NO_PROVIDERS; then
       # Missing providers scenario
       echo ""
       echo "=== test: missing providers ==="
       step "teardown providers" "$HARNESS" teardown --providers
-      step_output "new with no providers" "$HARNESS" new --local --name test-noprov --no-tty
+      step_output "up with no providers" "$HARNESS" up --local --name test-noprov --no-tty
       step "cleanup" "$HARNESS" teardown --sandboxes
     fi
   fi
@@ -235,7 +241,7 @@ test_ocp() {
   check_providers
 
   if $FULL; then
-    step_output "sandbox create" "$HARNESS" new --remote
+    step_output "sandbox create (up)" "$HARNESS" up --remote
     local sandbox_name="agent"
 
     for i in $(seq 1 30); do

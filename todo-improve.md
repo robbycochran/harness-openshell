@@ -18,7 +18,7 @@ Effort: S (<1hr), M (1-4hr), L (4hr+).
 ## Done — safety and quality
 
 - [x] **teardown no-args defaults to maximum destruction** [S]
-- [x] **--local/--remote not mutually exclusive on new** [S]
+- [x] **--local/--remote not mutually exclusive on up (formerly new)** [S]
 - [x] **deployRemote prints no guidance on partial failure** [S]
 - [x] **ProviderList/SandboxList dedup** — `parseFirstColumn` helper [S]
 - [x] **RunHelm returns (string, error) but string is always empty** [S]
@@ -79,7 +79,7 @@ These will be restructured or replaced during the command/code reorg.
 - [ ] **Preflight subcommands** → redesigned in new command structure [S]
 - [ ] **Cobra examples** → add after commands are renamed [S]
 - [ ] **Hardcoded values → harness.toml config** → addressed by config redesign [M]
-- [ ] **Context propagation + cancellation** → natural to add when splitting new→create/up [L]
+- [x] **Context propagation + cancellation** → split into create/up is done [L]
 - [ ] **Gateway CLI timeout** → comes with context propagation [M]
 - [ ] **kubectl log tailing bypasses k8s.Runner** → restructured code [S]
 - [ ] **Configmap creation dedup** → restructured code [S]

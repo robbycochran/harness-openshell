@@ -106,7 +106,7 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool, gwCfg 
 	}
 
 	fmt.Println()
-	status.Done("Done. Launch a sandbox with: harness new --local")
+	status.Done("Done. Launch a sandbox with: harness up --local")
 	return nil
 }
 

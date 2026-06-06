@@ -16,9 +16,9 @@ Each sandbox is an isolated container with a Claude Code agent, credential provi
 
 The harness exposes a single entry point (`harness`) with subcommands.
 
-### `harness new [--local|--remote] [--profile NAME] [--name SANDBOX_NAME] [--no-tty]`
+### `harness up [--local|--remote] [--profile NAME] [--name SANDBOX_NAME] [--no-tty]`
 
-Create a new sandbox. This is the primary command. It performs these steps in order:
+Full flow: deploy gateway, register providers, and create a sandbox. This is the primary command. It performs these steps in order:
 
 1. **Ensure gateway** — if `--local`, verify the local podman gateway is running. If `--remote`, deploy to OpenShift (Helm chart, CRDs, SCCs, route, mTLS certs). If neither, check for an active gateway.
 2. **Ensure providers** — if no providers are registered on the gateway, run provider registration.
@@ -30,6 +30,12 @@ Create a new sandbox. This is the primary command. It performs these steps in or
 If `--no-tty` is passed, the sandbox runs `startup.sh` and exits (for testing). Otherwise, it runs `startup.sh` then execs into the configured command (e.g., `claude --bare`).
 
 If `--name` is not provided, the sandbox name comes from the profile's `name` field.
+
+### `harness create [NAME] [--profile NAME] [--no-tty]`
+
+Create a sandbox without deploying the gateway or registering providers. Errors if the gateway is not already running. Use this when the gateway and providers are already set up (e.g., after a previous `harness up` or `harness deploy` + `harness providers`).
+
+Accepts a positional `NAME` argument or `--name` flag. Otherwise behaves like the sandbox creation step of `harness up`.
 
 ### `harness connect [SANDBOX_NAME]`
 
@@ -274,7 +280,7 @@ The launcher connects to the gateway at `https://openshell.openshell.svc.cluster
 
 - `internal/gateway/cli_test.go` — stub-based tests for CLI output parsing and argument building
 - `internal/profile/profile_test.go` — TOML parsing, env generation, provider validation with mock gateway
-- `cmd/new_test.go` — orchestration tests: no gateway, missing providers, retry logic, create opts
+- `cmd/new_test.go` — orchestration tests for `up` and `create`: no gateway, missing providers, retry logic, create opts
 - `sandbox/launcher/main_test.go` — launcher config parsing and file staging
 
 ### Integration Tests (`test/test-flow.sh`)
