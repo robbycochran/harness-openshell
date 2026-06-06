@@ -1,50 +1,35 @@
 # OpenShell Harness
 
-An orchestration layer for [OpenShell](https://github.com/NVIDIA/OpenShell) that manages gateway deployment, provider registration, credential validation, and sandbox configuration. One command gets you from zero to a running AI agent sandbox on local Podman or remote OpenShift.
+An orchestration layer for [OpenShell](https://github.com/NVIDIA/OpenShell) that automates gateway deployment, provider registration, credential validation, and sandbox creation. One command gets you from zero to a running AI agent sandbox on local Podman or remote OpenShift.
 
 ## Relationship to OpenShell
 
-The harness wraps `openshell` — it doesn't replace it. Every operation delegates to the OpenShell CLI via `exec.Command`. Users can drop to raw `openshell` commands at any time.
+The harness wraps `openshell` -- it does not replace it. Every operation delegates to the OpenShell CLI via `exec.Command`. Users can drop to raw `openshell` commands at any time.
 
-The harness exists to bridge gaps in OpenShell's current workflow:
+The harness automates four things that OpenShell leaves to the user:
 
-- **Gateway deployment** — OpenShell provides the gateway binary and Helm chart but leaves orchestration to the user (namespace setup, CRDs, SCCs on OpenShift, mTLS cert extraction, Helm values). The harness automates this via config-driven gateway definitions (`gateways/local/`, `gateways/ocp/`, `gateways/kind/`).
+- **Gateway deployment** -- OpenShell provides the gateway binary and Helm chart but leaves orchestration to the user (namespace setup, CRDs, SCCs on OpenShift, mTLS cert extraction, Helm values). The harness drives this via config-driven gateway definitions (`gateways/local/`, `gateways/ocp/`, `gateways/kind/`).
 
-- **Provider lifecycle** — OpenShell manages credentials once registered, but doesn't validate prerequisites or discover credentials from local tooling. The harness adds preflight checks (env vars, files, connectivity probes) and profile-driven provider selection.
+- **Provider lifecycle** -- OpenShell manages credentials once registered but does not validate prerequisites or discover credentials from local tooling. The harness adds preflight checks (env vars, files, connectivity probes) and profile-driven provider selection.
 
-- **Credential validation** — preflight checks verify credentials are present and valid on the host before registration. In-sandbox verification (confirming providers work end-to-end from inside a running sandbox) is planned but not yet implemented.
+- **Credential validation** -- Preflight checks verify credentials are present and valid on the host before registration.
 
-- **Parity across targets** — a sandbox created locally via Podman should behave identically to one on OpenShift. The harness enforces this by using the same profiles, provider catalog, and validation on both.
+- **Parity across targets** -- A sandbox created locally via Podman behaves identically to one on OpenShift. The harness enforces this by using the same profiles, provider catalog, and validation on both.
 
-As OpenShell matures, the harness should shrink. Every workaround tracks the upstream issue that would eliminate it (see [AGENTS.md](AGENTS.md)).
+As OpenShell adds native support for these workflows, the corresponding harness code shrinks. Every workaround tracks the upstream issue that would eliminate it (see [AGENTS.md](AGENTS.md)).
 
 ## How It Compares
 
 | Concern | OpenShell Harness | [Kaiden](https://github.com/openkaiden/kaiden) | [Plandex](https://github.com/plandex-ai/plandex) |
 |---------|-------------------|--------|---------|
-| **Primary focus** | Gateway deploy + provider orchestration | GUI workspace management, resource selection | Plan-driven coding agent |
-| **Sandbox runtime** | OpenShell (delegates entirely) | OpenShell (migrating to it) | None (runs locally) |
-| **Entry point** | Container image (image-first) | Local folder or git URL (source-first) | Local directory |
-| **Provider management** | Preflight validation + registration | References by name (delegates to OpenShell) | N/A |
+| **Sandbox runtime** | Delegates entirely to OpenShell | Migrating to OpenShell | None (runs locally) |
+| **Entry point** | Container image | Local folder or git URL | Local directory |
+| **Provider management** | Preflight validation + registration | Delegates to OpenShell | N/A |
 | **Target environments** | Local Podman + remote K8s/OCP | Local only (desktop app) | Local only |
-| **Credential isolation** | Proxy-resolved placeholders, sandbox never sees tokens | Delegates to OpenShell | None |
+| **Credential isolation** | Proxy-resolved placeholders; sandbox never sees tokens | Delegates to OpenShell | None |
 | **Configuration** | TOML profiles + provider catalog | JSON projects (GUI-driven) | YAML plans |
 
-The harness operates at the infrastructure layer — deploying gateways, registering providers, validating credentials. Kaiden operates at the workspace layer — selecting which skills, MCP servers, and knowledge bases a workspace gets. They are complementary, not competing. See [profile.md](profile.md) for a detailed analysis.
-
-## Goals
-
-1. **One command to working sandbox.** `harness new` chains gateway deployment, provider registration, and sandbox creation into a single invocation.
-
-2. **Reproducible environments.** Profiles define exactly what a sandbox needs. The same profile produces the same environment regardless of who runs it or where.
-
-3. **Credential visibility.** Preflight checks validate credentials locally before registration — env vars set, files present, connectivity confirmed. You know what's broken before you try to create a sandbox.
-
-4. **Clean separation of concerns.** Infrastructure config, provider management, and sandbox profiles are independent. Changing your Jira token doesn't require editing sandbox profiles. Switching clusters doesn't require re-registering providers.
-
-5. **Thin wrapper, not a platform.** Orchestration and validation on top of OpenShell. No reimplementation of sandbox runtime, network policy, or credential injection.
-
-6. **Image-first, no host mounts.** Sandboxes boot from container images with tools baked in. Files are uploaded, not bind-mounted. Host-mounted workflows break parity between local and remote targets, bypass credential isolation, and create implicit dependencies on the host filesystem. If it doesn't work on OpenShift, it shouldn't work locally either. The sandbox interacts with the outside world through providers — git commits, PR reviews, Jira comments, email — not by writing files that get pulled back to the host.
+The harness operates at the infrastructure layer -- deploying gateways, registering providers, validating credentials. Kaiden operates at the workspace layer -- selecting which skills, MCP servers, and knowledge bases a workspace gets. They are complementary. See [profile.md](profile.md) for a detailed analysis.
 
 ## Three Domains
 
@@ -52,9 +37,9 @@ The harness operates at the infrastructure layer — deploying gateways, registe
 |--------|----------|--------|----------|
 | **Infrastructure** | How is the gateway deployed? | `gateways/<name>/gateway.toml` | `deploy`, `teardown --k8s` |
 | **Providers** | What credentials are available and valid? | `providers.toml` | `providers`, `preflight` |
-| **Sandbox** | What sandbox do I want? | `profiles/*.toml` | `new`, `connect` |
+| **Sandbox** | What sandbox do I want? | `profiles/*.toml` | `up`, `create`, `connect` |
 
-Each domain has its own config, its own code boundary, and its own concerns. A sandbox profile says what providers a sandbox *wants*. The provider catalog says what *exists* and how to validate it. The infrastructure layer handles *where* it all runs.
+Each domain has its own config, its own code boundary, and its own concerns. A sandbox profile says what providers a sandbox wants. The provider catalog says what exists and how to validate it. The infrastructure layer handles where it all runs.
 
 ## Quick Start
 
@@ -74,11 +59,11 @@ export JIRA_USERNAME="you@example.com"
 # Build the harness
 make cli
 
-# Local — deploy gateway, register providers, create sandbox
-harness new --local
+# Local -- deploy gateway, register providers, create sandbox
+harness up --local
 
-# Remote — same flow on OpenShift
-harness new --remote
+# Remote -- same flow on OpenShift
+harness up --remote
 
 # Reconnect to a running sandbox
 harness connect
@@ -89,8 +74,12 @@ Podman is required for local sandboxes. kubectl + helm are required for remote.
 ## Commands
 
 ```
-harness new [--local|--remote] [--profile NAME]
-    Full flow: deploy gateway + register providers + create sandbox.
+harness up [--local|--remote] [--profile NAME] [--name SANDBOX_NAME]
+    Full flow: deploy gateway + register providers + create sandbox + connect.
+
+harness create [--profile NAME] [--name SANDBOX_NAME]
+    Validate gateway readiness, check provider prerequisites, and deploy a sandbox.
+    Non-interactive -- prints the sandbox name for later connection via harness connect.
 
 harness connect [NAME]
     Reconnect to a running sandbox.
@@ -110,7 +99,7 @@ harness teardown [--sandboxes] [--providers] [--k8s]
 
 ## Profiles
 
-Sandboxes are configured via TOML profiles. A profile defines the sandbox shape — image, command, which providers to attach, and environment variables.
+Sandboxes are configured via TOML profiles. A profile defines the sandbox shape -- image, command, which providers to attach, and environment variables.
 
 ```toml
 # profiles/default.toml
@@ -125,7 +114,7 @@ ANTHROPIC_BASE_URL = "https://inference.local"
 
 Provider credentials and provider-specific config are provider concerns, not profile concerns. The profile just lists which providers the sandbox wants.
 
-Use a specific profile: `harness new --profile research`
+Use a specific profile: `harness up --profile research`
 
 ## Provider Catalog
 
@@ -143,31 +132,59 @@ inputs = [
 ]
 ```
 
-Providers with `type = "openshell"` are registered with the gateway and managed by OpenShell's credential proxy. Providers with `type = "custom"` are workarounds for integrations OpenShell doesn't natively support yet — each tracks its upstream issue. See [PROVIDERS-SPEC.md](PROVIDERS-SPEC.md) for the full schema.
+Providers with `type = "openshell"` are registered with the gateway and managed by OpenShell's credential proxy. Providers with `type = "custom"` are workarounds for integrations OpenShell does not natively support yet -- each tracks its upstream issue. See [PROVIDERS-SPEC.md](PROVIDERS-SPEC.md) for the full schema.
 
 ## Architecture
 
 ```
 Local (Podman)                    Remote (OpenShift)
-┌──────────┐                    ┌──────────────────────────────┐
-│ harness  │  openshell CLI     │ Gateway (StatefulSet)         │
-│ CLI      ├───────────────────►│   ├─ OpenShell API             │
-│          │  localhost:17670   │   ├─ inference.local proxy     │
-└──────────┘                    │   ├─ Provider credential store │
-                                │   └─ OAuth token refresh       │
-       or                       │                                │
-                                │ Sandbox Pods                   │
-┌──────────┐  Route (mTLS)      │   ├─ Claude Code → Vertex AI   │
-│ harness  ├───────────────────►│   ├─ mcp-atlassian             │
-│ CLI      │  OCP :443          │   ├─ gws CLI                   │
-└──────────┘                    │   ├─ gh CLI                    │
-                                │   └─ L7 network proxy          │
-                                └──────────────────────────────┘
++-----------+                    +------------------------------+
+| harness   |  openshell CLI     | Gateway (StatefulSet)         |
+| CLI       +-------------------+|   +- OpenShell API             |
+|           |  localhost:17670   |   +- inference.local proxy     |
++-----------+                    |   +- Provider credential store |
+                                 |   +- OAuth token refresh       |
+       or                        |                                |
+                                 | Sandbox Pods                   |
++-----------+  Route (mTLS)      |   +- Claude Code -> Vertex AI  |
+| harness   +-------------------+|   +- mcp-atlassian             |
+| CLI       |  OCP :443          |   +- gws CLI                   |
++-----------+                    |   +- gh CLI                    |
+                                 |   +- L7 network proxy          |
+                                 +------------------------------+
 ```
 
-The harness talks to the gateway via the `openshell` CLI (exec). Direct gRPC is a planned future improvement — the Gateway interface already abstracts the transport.
+The harness talks to the gateway via the `openshell` CLI (exec). The Gateway interface abstracts the transport to support a future gRPC path.
 
 Each sandbox gets credential isolation (proxy-resolved placeholders, the sandbox never sees real tokens), per-binary network policy enforcement, and a reproducible toolchain pinned in the container image.
+
+### Launcher (in-cluster sandbox creation)
+
+The launcher is a Kubernetes Job that runs in the target namespace alongside the gateway. It bridges cluster-side secrets into the sandbox.
+
+**Why it exists.** Remote sandboxes on OpenShift need mTLS certificates, GWS credentials, and other secrets that live in the cluster. The harness CLI runs on the user's workstation and does not have access to these secrets. The launcher runs in-cluster where it can mount them directly, then creates and configures the sandbox from there.
+
+**When it runs.** The gateway config (`gateway.toml`) controls this via the `mode` field:
+
+| Mode | When | What happens |
+|------|------|-------------|
+| `launcher` | Remote/OCP deployments with custom providers that need cluster secrets | Harness submits a Kubernetes Job; the launcher binary does the rest in-cluster |
+| `direct` | Local Podman, or remote clusters using only official providers | Harness creates the sandbox directly via the `openshell` CLI -- no Job needed |
+
+The OCP gateway (`gateways/ocp/gateway.toml`) defaults to `mode = "launcher"`. The local and kind gateways default to `mode = "direct"`.
+
+**The flow.** When `harness up --remote` runs:
+
+1. The harness creates a ConfigMap from the selected profile and submits a launcher Job.
+2. The launcher pod starts with four volume mounts: the profile ConfigMap, the GWS credentials Secret, the mTLS client certificate Secret, and an optional env ConfigMap.
+3. The launcher registers the gateway using the mounted mTLS certs (`openshell gateway add` + metadata patch for mTLS auth).
+4. It checks which providers from the profile are already registered on the gateway.
+5. It stages credential files (GWS tokens, sandbox env vars) into a temporary directory.
+6. It creates the sandbox via `openshell sandbox create` with the profile's image, providers, and a no-op command.
+7. It uploads the staged credential files into the sandbox at `/sandbox/.config/openshell/`.
+8. It runs the startup script (`/sandbox/startup.sh`) inside the sandbox to finalize configuration.
+
+The launcher source is at `sandbox/launcher/main.go`.
 
 ## Project Layout
 
@@ -185,13 +202,6 @@ Each sandbox gets credential isolation (proxy-resolved placeholders, the sandbox
 | `sandbox/launcher/` | In-cluster launcher for OCP sandboxes |
 | `sandbox/profiles/` | OpenShell provider type profiles (YAML, imported into gateway) |
 | `test/` | Tests (bats preflight, test-flow.sh integration) |
-
-## Future Direction
-
-- **In-sandbox provider verification** — validate that providers actually work from inside a running sandbox, not just that credentials are present on the host. Catches expired tokens, proxy misconfig, and endpoint reachability issues.
-- **Proto-based profiles** — align profile schema with OpenShell's proto types (`SandboxSpec`, `ProviderProfile`) for compile-time upstream compatibility.
-- **Direct gRPC** — replace CLI exec with gRPC calls to the gateway, eliminating output parsing. The Gateway interface already abstracts this swap.
-- **Shrink** — as OpenShell adds native support for GWS credentials, provider config injection, and in-cluster sandbox creation, remove the corresponding harness workarounds.
 
 ## Testing
 
