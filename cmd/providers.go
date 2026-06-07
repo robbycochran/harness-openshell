@@ -11,6 +11,7 @@ import (
 	"github.com/robbycochran/harness-openshell/internal/gateway"
 	"github.com/robbycochran/harness-openshell/internal/status"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 func NewProvidersCmd(harnessDir, cli string) *cobra.Command {
@@ -95,7 +96,7 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool, gwCfg 
 	if err := registerAtlassian(gw, providerEnabled); err != nil {
 		return err
 	}
-	if err := registerGWS(gw, providerEnabled); err != nil {
+	if err := registerGWS(harnessDir, gw, providerEnabled); err != nil {
 		return err
 	}
 
@@ -212,7 +213,7 @@ func registerAtlassian(gw gateway.Gateway, enabled func(string) bool) error {
 	return nil
 }
 
-func registerGWS(gw gateway.Gateway, enabled func(string) bool) error {
+func registerGWS(harnessDir string, gw gateway.Gateway, enabled func(string) bool) error {
 	if !enabled("gws") {
 		status.Info("gws: disabled by gateway config")
 		return nil
@@ -254,23 +255,25 @@ func registerGWS(gw gateway.Gateway, enabled func(string) bool) error {
 		return fmt.Errorf("creating gws provider: %w", err)
 	}
 
+	// Read scopes from the provider profile so they're defined in one place.
+	profileScopes := gwsProfileScopes(harnessDir)
+
 	// Configure gateway-managed OAuth refresh. The gateway stores client_secret
 	// and refresh_token as secret material — they are never injected into sandboxes.
 	// Scopes are passed as material so Google mints a narrowed access token —
 	// only these scopes are accessible even though the refresh_token has more.
+	material := []string{
+		"client_id=" + creds.ClientID,
+		"client_secret=" + creds.ClientSecret,
+		"refresh_token=" + creds.RefreshToken,
+	}
+	if profileScopes != "" {
+		material = append(material, "scopes="+profileScopes)
+	}
 	if err := gw.ProviderRefreshConfigure("gws", gateway.ProviderRefreshOpts{
-		CredentialKey: "GOOGLE_WORKSPACE_CLI_TOKEN",
-		Strategy:      "oauth2-refresh-token",
-		Material: []string{
-			"client_id=" + creds.ClientID,
-			"client_secret=" + creds.ClientSecret,
-			"refresh_token=" + creds.RefreshToken,
-			"scopes=" +
-				"https://www.googleapis.com/auth/gmail.readonly" +
-				" https://www.googleapis.com/auth/calendar.readonly" +
-				" https://www.googleapis.com/auth/drive.readonly" +
-				" https://www.googleapis.com/auth/tasks.readonly",
-		},
+		CredentialKey:      "GOOGLE_WORKSPACE_CLI_TOKEN",
+		Strategy:           "oauth2-refresh-token",
+		Material:           material,
 		SecretMaterialKeys: []string{"client_secret", "refresh_token"},
 	}); err != nil {
 		return fmt.Errorf("configuring gws refresh: %w", err)
@@ -283,6 +286,27 @@ func registerGWS(gw gateway.Gateway, enabled func(string) bool) error {
 
 	status.OK("gws: registered (gateway-managed token refresh)")
 	return nil
+}
+
+// gwsProfileScopes reads the refresh.scopes list from sandbox/profiles/gws.yaml
+// and returns them as a space-separated string for use as OAuth scope material.
+func gwsProfileScopes(harnessDir string) string {
+	profilePath := filepath.Join(harnessDir, "sandbox", "profiles", "gws.yaml")
+	data, err := os.ReadFile(profilePath)
+	if err != nil {
+		return ""
+	}
+	var profile struct {
+		Credentials []struct {
+			Refresh struct {
+				Scopes []string `yaml:"scopes"`
+			} `yaml:"refresh"`
+		} `yaml:"credentials"`
+	}
+	if err := yaml.Unmarshal(data, &profile); err != nil || len(profile.Credentials) == 0 {
+		return ""
+	}
+	return strings.Join(profile.Credentials[0].Refresh.Scopes, " ")
 }
 
 func deleteCustomProfiles(harnessDir string, gw gateway.Gateway) {
