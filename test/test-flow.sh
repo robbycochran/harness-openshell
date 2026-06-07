@@ -119,10 +119,36 @@ check_providers() {
   fi
 }
 
+sandbox_wait() {
+  # Poll for sandbox Ready, failing fast on k8s bad states (ImagePullBackOff, etc.)
+  local name="$1"
+  for i in $(seq 1 30); do
+    local phase
+    phase=$("$CLI" sandbox list 2>/dev/null | strip_ansi | awk -v n="$name" '$1==n {print $NF}')
+    [[ "$phase" == "Ready" ]] && return 0
+
+    # On k8s targets, check for pod bad states so we fail fast instead of timing out
+    if kubectl get pods -n openshell 2>/dev/null | grep -q "ImagePullBackOff\|ErrImagePull\|CrashLoopBackOff"; then
+      local bad
+      bad=$(kubectl get pods -n openshell 2>/dev/null | grep "ImagePullBackOff\|ErrImagePull\|CrashLoopBackOff" | awk '{print $1, $3}' | head -3)
+      echo "  ERROR: k8s pod in bad state: $bad" >&2
+      return 1
+    fi
+    sleep 2
+  done
+  return 1
+}
+
 sandbox_verify() {
   local name="$1"
   local phase
-  phase=$("$CLI" sandbox list 2>/dev/null | strip_ansi | awk -v n="$name" '$1==n {print $NF}')
+  if ! sandbox_wait "$name"; then
+    phase=$("$CLI" sandbox list 2>/dev/null | strip_ansi | awk -v n="$name" '$1==n {print $NF}')
+    printf "  ✗ %-35s %s\n" "sandbox ready" "(phase: ${phase:-not found})"
+    ((FAIL++))
+    return
+  fi
+  phase="Ready"
   if [[ "$phase" != "Ready" ]]; then
     printf "  ✗ %-35s\n" "sandbox ready"
     ((FAIL++))
@@ -331,11 +357,6 @@ test_ocp() {
       step_output "sandbox create (up)" "$HARNESS" up --remote --name "$sandbox_name" --no-tty
     fi
 
-    for i in $(seq 1 30); do
-      local phase=$("$CLI" sandbox list 2>/dev/null | strip_ansi | awk -v n="$sandbox_name" '$1==n {print $NF}')
-      [[ "$phase" == "Ready" ]] && break
-      sleep 2
-    done
     sandbox_verify "$sandbox_name"
     step "sandbox delete" "$CLI" sandbox delete "$sandbox_name"
   fi

@@ -264,7 +264,8 @@ func deployFromConfig(harnessDir string, gwCfg *gateway.GatewayConfig, gw gatewa
 		return fmt.Errorf("listing existing gateways: %w", err)
 	}
 	for _, g := range existing {
-		if routeHost != "" && strings.Contains(g.Endpoint, routeHost) {
+		// Remove stale registration for same name or same route host (idempotent re-deploy).
+		if g.Name == gatewayName || (routeHost != "" && strings.Contains(g.Endpoint, routeHost)) {
 			gw.GatewayRemove(g.Name)
 		}
 	}

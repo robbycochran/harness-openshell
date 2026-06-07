@@ -303,8 +303,11 @@ func upLocal(opts upLocalOpts) error {
 	}
 	injectAtlassianEnv(cfg)
 
-	// Resolve Dockerfile path relative to harnessDir
-	if cfg.From != "" && !filepath.IsAbs(cfg.From) {
+	// SANDBOX_IMAGE env var overrides the profile's image (dev/CI builds).
+	if envImage := os.Getenv("SANDBOX_IMAGE"); envImage != "" {
+		cfg.From = envImage
+	} else if cfg.From != "" && !filepath.IsAbs(cfg.From) {
+		// Resolve Dockerfile path relative to harnessDir
 		candidate := filepath.Join(opts.harnessDir, cfg.From)
 		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
 			cfg.From = candidate
