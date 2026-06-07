@@ -70,11 +70,75 @@ Current workarounds and their upstream tracking:
 
 | Workaround | Why | Upstream |
 |------------|-----|----------|
-| GWS credential export/upload | gws CLI reads encrypted local files | [#1268](https://github.com/NVIDIA/OpenShell/issues/1268), [#1423](https://github.com/NVIDIA/OpenShell/issues/1423) |
 | Custom gateway image | `google-vertex-ai` provider not in released builds yet | Will ship in upstream release |
 | `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1` | Vertex AI rejects `context_management` beta header | Anthropic/Google to align APIs |
-| Atlassian `JIRA_URL`/`JIRA_USERNAME` as uploaded config | Provider v2 config keys not injected as env vars yet | OpenShell roadmap |
+| Atlassian `JIRA_URL`/`JIRA_USERNAME` as `--config` material | Provider v2 config keys not injected as env vars yet | OpenShell roadmap |
 | In-cluster launcher Job | OpenShell doesn't have a native K8s-triggered sandbox creation | Potential future CRD |
+
+Previously worked around, now resolved:
+
+| Was | Resolution |
+|-----|-----------|
+| GWS credential export/upload to sandbox | GWS is now a native provider (`google-workspace`). Gateway manages OAuth refresh via `oauth2_refresh_token` strategy + `request_body_credential_rewrite` on `oauth2.googleapis.com`. Sandbox gets a proxy-resolved placeholder. |
+
+## Validation
+
+Validation has two modes — **default** and **ci** — that are independent of where
+the gateway runs (local Podman, kind, OCP). The mode controls what is tested, not
+the target.
+
+### Modes
+
+**`default`** — expects user credentials. Tests the full stack including provider
+registration, credential injection, and the GWS OAuth token lifecycle.
+
+**`ci`** — no credentials required. Tests gateway deploy and sandbox lifecycle only.
+Runs in GitHub Actions on every PR.
+
+```
+--ci flag  =  --no-providers --profile=ci --full
+```
+
+### Make targets
+
+| Target | Gateway | Mode |
+|--------|---------|------|
+| `make validate-local` | local Podman | default (needs creds) |
+| `make validate-local-ci` | local Podman | ci (no creds) |
+| `make validate-kind` | kind cluster | default (needs creds) |
+| `make validate-kind-ci` | kind cluster | ci (no creds) |
+
+Or directly:
+```bash
+./test/test-flow.sh local          # default mode
+./test/test-flow.sh local --ci     # ci mode
+./test/test-flow.sh kind --ci      # used in GitHub Actions
+```
+
+### Default mode requirements
+
+- `openshell` gateway running locally (`brew services start openshell`)
+- `JIRA_API_TOKEN`, `JIRA_URL`, `JIRA_USERNAME` for Atlassian
+- `gcloud auth application-default login` for Vertex AI
+- `gws auth login` for Google Workspace
+- `GITHUB_TOKEN` for GitHub
+
+Default mode does not run in GitHub Actions today — it requires personal OAuth
+credentials. Future: service accounts for Vertex AI and Atlassian can run in GHA;
+GWS would need a dedicated OAuth service account.
+
+### What each mode tests
+
+| Check | ci | default |
+|-------|----|---------|
+| Gateway deploy and rollout | ✓ | ✓ |
+| Sandbox create / exec / delete | ✓ | ✓ |
+| Provider registration | — | ✓ |
+| `GOOGLE_WORKSPACE_CLI_TOKEN` is proxy placeholder | — | ✓ |
+| Gmail/Calendar/Drive API via proxy | — | ✓ |
+| GWS token rotation survives in sandbox | — | ✓ |
+| Inference (Vertex AI) | — | ✓ |
+| Atlassian MCP server | — | ✓ |
 
 ## Adding a new integration
 

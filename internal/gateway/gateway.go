@@ -9,6 +9,8 @@ type Gateway interface {
 	ProviderList() ([]string, error)
 	ProviderProfileImport(dir string) error
 	ProviderProfileDelete(id string) error
+	ProviderRefreshConfigure(name string, opts ProviderRefreshOpts) error
+	ProviderRefreshRotate(name, credentialKey string) error
 
 	// Sandboxes
 	SandboxList() ([]string, error)
@@ -26,7 +28,7 @@ type Gateway interface {
 	CLIVersion() string
 	CLIPath() string
 	ActiveGateway() string
-	GatewayAdd(endpoint, name string, local bool) error
+	GatewayAdd(endpoint, name string, local, insecure bool) error
 	GatewayRemove(name string) error
 	GatewayList() ([]GatewayInfo, error)
 	GatewaySelect(name string) error
@@ -37,6 +39,13 @@ type ProviderCreateOpts struct {
 	Credentials []string
 	Configs     []string
 	FromADC     bool
+}
+
+type ProviderRefreshOpts struct {
+	CredentialKey    string
+	Strategy         string
+	Material         []string // KEY=VALUE pairs
+	SecretMaterialKeys []string // keys within Material that are secret
 }
 
 type GatewayInfo struct {

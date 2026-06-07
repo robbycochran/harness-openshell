@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	"github.com/robbycochran/harness-openshell/internal/gateway"
 	"github.com/robbycochran/harness-openshell/internal/status"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 func NewProvidersCmd(harnessDir, cli string) *cobra.Command {
@@ -60,7 +62,7 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool, gwCfg 
 		if len(sandboxes) > 0 {
 			return fmt.Errorf("cannot --force with running sandboxes — delete them first")
 		}
-		for _, name := range []string{"github", "vertex-local", "atlassian"} {
+		for _, name := range []string{"github", "vertex-local", "atlassian", "gws"} {
 			if providerEnabled(name) {
 				gw.ProviderDelete(name)
 			}
@@ -92,6 +94,9 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool, gwCfg 
 		return err
 	}
 	if err := registerAtlassian(gw, providerEnabled); err != nil {
+		return err
+	}
+	if err := registerGWS(harnessDir, gw, providerEnabled); err != nil {
 		return err
 	}
 
@@ -206,6 +211,102 @@ func registerAtlassian(gw gateway.Gateway, enabled func(string) bool) error {
 	}
 	status.OK("atlassian: registered")
 	return nil
+}
+
+func registerGWS(harnessDir string, gw gateway.Gateway, enabled func(string) bool) error {
+	if !enabled("gws") {
+		status.Info("gws: disabled by gateway config")
+		return nil
+	}
+	if gw.ProviderGet("gws") == nil {
+		status.Info("gws: exists (use --force to recreate)")
+		return nil
+	}
+
+	gwsPath, _ := exec.LookPath("gws")
+	if gwsPath == "" {
+		status.Info("gws: not installed (skipping)")
+		return nil
+	}
+
+	out, err := exec.Command(gwsPath, "auth", "export", "--unmasked").Output()
+	if err != nil {
+		status.Info("gws: not authenticated (run 'gws auth login')")
+		return nil
+	}
+
+	var creds struct {
+		ClientID     string `json:"client_id"`
+		ClientSecret string `json:"client_secret"`
+		RefreshToken string `json:"refresh_token"`
+	}
+	if err := json.Unmarshal(out, &creds); err != nil {
+		return fmt.Errorf("parsing gws credentials: %w", err)
+	}
+	if creds.ClientID == "" || creds.ClientSecret == "" || creds.RefreshToken == "" {
+		status.Info("gws: incomplete credentials (skipping)")
+		return nil
+	}
+
+	// Create provider with a placeholder — the gateway will refresh it immediately.
+	if err := gw.ProviderCreate("gws", "google-workspace", gateway.ProviderCreateOpts{
+		Credentials: []string{"GOOGLE_WORKSPACE_CLI_TOKEN=pending"},
+	}); err != nil {
+		return fmt.Errorf("creating gws provider: %w", err)
+	}
+
+	// Read scopes from the provider profile so they're defined in one place.
+	profileScopes := gwsProfileScopes(harnessDir)
+
+	// Configure gateway-managed OAuth refresh. The gateway stores client_secret
+	// and refresh_token as secret material — they are never injected into sandboxes.
+	// Scopes are passed as material so Google mints a narrowed access token —
+	// only these scopes are accessible even though the refresh_token has more.
+	material := []string{
+		"client_id=" + creds.ClientID,
+		"client_secret=" + creds.ClientSecret,
+		"refresh_token=" + creds.RefreshToken,
+	}
+	if profileScopes != "" {
+		material = append(material, "scopes="+profileScopes)
+	}
+	if err := gw.ProviderRefreshConfigure("gws", gateway.ProviderRefreshOpts{
+		CredentialKey:      "GOOGLE_WORKSPACE_CLI_TOKEN",
+		Strategy:           "oauth2-refresh-token",
+		Material:           material,
+		SecretMaterialKeys: []string{"client_secret", "refresh_token"},
+	}); err != nil {
+		return fmt.Errorf("configuring gws refresh: %w", err)
+	}
+
+	// Force an immediate refresh so the token is valid before the first sandbox.
+	if err := gw.ProviderRefreshRotate("gws", "GOOGLE_WORKSPACE_CLI_TOKEN"); err != nil {
+		status.Infof("gws: refresh rotate failed (token will refresh automatically): %v", err)
+	}
+
+	status.OK("gws: registered (gateway-managed token refresh)")
+	return nil
+}
+
+// gwsProfileScopes reads the refresh.scopes list from sandbox/profiles/gws.yaml
+// and returns them as a space-separated string for use as OAuth scope material.
+func gwsProfileScopes(harnessDir string) string {
+	profilePath := filepath.Join(harnessDir, "sandbox", "profiles", "gws.yaml")
+	data, err := os.ReadFile(profilePath)
+	if err != nil {
+		return ""
+	}
+	var profile struct {
+		Credentials []struct {
+			Refresh struct {
+				Scopes []string `yaml:"scopes"`
+			} `yaml:"refresh"`
+		} `yaml:"credentials"`
+	}
+	if err := yaml.Unmarshal(data, &profile); err != nil || len(profile.Credentials) == 0 {
+		return ""
+	}
+	return strings.Join(profile.Credentials[0].Refresh.Scopes, " ")
 }
 
 func deleteCustomProfiles(harnessDir string, gw gateway.Gateway) {

@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
-# End-to-end validation for local and OCP flows.
+# End-to-end validation. Validation mode (default/ci) is independent of
+# the gateway target (local/kind/ocp).
+#
+# Validation modes:
+#   default  Expects user credentials (GITHUB_TOKEN, JIRA_API_TOKEN, gcloud ADC,
+#            gws auth). Tests the full provider chain including GWS token lifecycle.
+#   ci       No credentials required. Validates gateway deploy + sandbox lifecycle
+#            only. Suitable for GitHub Actions.
 #
 # Usage:
-#   ./test-flow.sh local                 # quick: deploy + providers + teardown
-#   ./test-flow.sh local --full          # full: + sandbox + verify integrations
-#   ./test-flow.sh local --full --no-providers --profile=ci   # CI mode (no creds)
-#   ./test-flow.sh ocp [--full]                  # OCP variants
-#   ./test-flow.sh ocp --full --reuse-gateway   # skip deploy/teardown-k8s (~50s vs ~130s)
-#   ./test-flow.sh all [--full]                  # both platforms
+#   ./test-flow.sh local                 # default mode, local gateway
+#   ./test-flow.sh local --ci            # ci mode, local gateway
+#   ./test-flow.sh kind                  # default mode, kind cluster
+#   ./test-flow.sh kind --ci             # ci mode, kind cluster (used in GHA)
+#   ./test-flow.sh ocp [--ci]            # OCP variants
+#   ./test-flow.sh ocp --reuse-gateway   # skip deploy/teardown (~50s vs ~130s)
+#   ./test-flow.sh all [--ci]            # all gateways
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -29,6 +37,7 @@ PROFILE="default"
 
 for arg in "$@"; do
   case "$arg" in
+    --ci)             NO_PROVIDERS=true; PROFILE="ci"; FULL=true ;;
     --full)           FULL=true ;;
     --reuse-gateway)  REUSE_GATEWAY=true ;;
     --no-providers)   NO_PROVIDERS=true ;;
@@ -39,7 +48,7 @@ for arg in "$@"; do
 done
 
 if [[ -z "$TARGET" ]]; then
-  echo "Usage: $0 <podman|ocp|all> [--full] [--reuse-gateway]"
+  echo "Usage: $0 <local|kind|ocp|all> [--ci] [--full] [--reuse-gateway]"
   exit 1
 fi
 
@@ -131,7 +140,8 @@ sandbox_verify() {
 
   # Provider-dependent checks (require credentials + inference)
   step "sandbox: env vars" "$CLI" sandbox exec --name "$name" -- bash -c 'test -n "$ANTHROPIC_BASE_URL"'
-  step "sandbox: gws creds" "$CLI" sandbox exec --name "$name" -- test -f /sandbox/.config/openshell/credentials.json
+  step "sandbox: gws token placeholder" "$CLI" sandbox exec --name "$name" -- bash -c 'echo "$GOOGLE_WORKSPACE_CLI_TOKEN" | grep -q "openshell:resolve:env"'
+  step "sandbox: gws api call" "$CLI" sandbox exec --name "$name" -- bash -c 'curl -sf https://gmail.googleapis.com/gmail/v1/users/me/profile -H "Authorization: Bearer $GOOGLE_WORKSPACE_CLI_TOKEN" -o /dev/null'
   step "sandbox: mcp config" "$CLI" sandbox exec --name "$name" -- test -f /sandbox/.mcp.json
   step_output "sandbox: claude responds" "$CLI" sandbox exec --name "$name" -- bash -c 'echo "respond with ok" | claude --bare --print 2>&1 | head -1'
 }
@@ -211,6 +221,73 @@ test_local() {
   step "teardown (clean)" "$HARNESS" teardown --sandboxes --providers
 }
 
+# ── GWS lifecycle test ───────────────────────────────────────────────
+
+test_gws() {
+  local sandbox_name="$1"
+  echo "=== test: GWS token lifecycle ==="
+
+  # Token is a proxy placeholder, never a real token
+  step "gws: token is placeholder" \
+    "$CLI" sandbox exec --name "$sandbox_name" -- bash -c \
+      'echo "$GOOGLE_WORKSPACE_CLI_TOKEN" | grep -q "openshell:resolve:env"'
+
+  # Real API call works through proxy (token resolved on the wire)
+  step "gws: Gmail API via proxy" \
+    "$CLI" sandbox exec --name "$sandbox_name" -- bash -c \
+      'curl -sf https://gmail.googleapis.com/gmail/v1/users/me/profile \
+        -H "Authorization: Bearer $GOOGLE_WORKSPACE_CLI_TOKEN" -o /dev/null'
+
+  # Force gateway token rotation, verify sandbox still works
+  openshell provider refresh rotate gws \
+    --credential-key GOOGLE_WORKSPACE_CLI_TOKEN &>/dev/null
+  step "gws: works after rotation" \
+    "$CLI" sandbox exec --name "$sandbox_name" -- bash -c \
+      'curl -sf https://gmail.googleapis.com/gmail/v1/users/me/profile \
+        -H "Authorization: Bearer $GOOGLE_WORKSPACE_CLI_TOKEN" -o /dev/null'
+
+  echo ""
+}
+
+# ── kind flow ────────────────────────────────────────────────────────
+
+test_kind() {
+  local mode="quick"
+  $FULL && mode="full"
+  echo "=== test-flow: kind ($mode) ==="
+
+  # Verify kind cluster is up
+  if ! kubectl get nodes &>/dev/null; then
+    echo "  ERROR: no kind cluster — run: kind create cluster --name openshell"
+    ((FAIL++))
+    return
+  fi
+
+  step "teardown" "$HARNESS" teardown --sandboxes --providers --k8s
+  step "deploy" "$HARNESS" deploy kind
+
+  if ! $NO_PROVIDERS; then
+    step "setup providers" "$HARNESS" providers
+    step "gateway reachable" "$CLI" inference get
+    check_providers
+  fi
+
+  if $FULL; then
+    local sandbox_name="test-kind"
+    step_output "sandbox create" "$HARNESS" up --name "$sandbox_name" --profile "$PROFILE" --no-tty
+    sandbox_verify "$sandbox_name"
+
+    if ! $NO_PROVIDERS; then
+      test_gws "$sandbox_name"
+    fi
+
+    step "sandbox delete" "$CLI" sandbox delete "$sandbox_name"
+  fi
+
+  step "teardown (clean)" "$HARNESS" teardown --sandboxes --providers --k8s
+  echo ""
+}
+
 # ── OCP flow ─────────────────────────────────────────────────────────
 
 test_ocp() {
@@ -266,11 +343,12 @@ test_errors
 
 case "$TARGET" in
   local|podman) test_local ;;
+  kind)   test_kind ;;
   ocp)    test_ocp ;;
-  all)    test_local; echo ""; test_ocp ;;
+  all)    test_local; echo ""; test_kind; echo ""; test_ocp ;;
   *)
     echo "Unknown target: $TARGET"
-    echo "Usage: $0 <podman|ocp|all> [--full]"
+    echo "Usage: $0 <local|kind|ocp|all> [--full]"
     exit 1
     ;;
 esac

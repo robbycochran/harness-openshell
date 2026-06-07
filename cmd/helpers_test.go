@@ -55,7 +55,7 @@ func (m *mockGW) ProviderProfileDelete(string) error                            
 func (m *mockGW) SettingsSet(string, string) error                                { return nil }
 func (m *mockGW) SandboxList() ([]string, error)                                  { return nil, nil }
 func (m *mockGW) SandboxConnect(string) error                                     { return nil }
-func (m *mockGW) GatewayAdd(string, string, bool) error                          { return nil }
+func (m *mockGW) GatewayAdd(string, string, bool, bool) error                    { return nil }
 func (m *mockGW) GatewayRemove(name string) error {
 	if m.onGatewayRemove != nil {
 		m.onGatewayRemove(name)
@@ -65,7 +65,9 @@ func (m *mockGW) GatewayRemove(name string) error {
 func (m *mockGW) GatewayList() ([]gateway.GatewayInfo, error) {
 	return m.gatewayListResult, nil
 }
-func (m *mockGW) GatewaySelect(string) error { return nil }
+func (m *mockGW) GatewaySelect(string) error                                             { return nil }
+func (m *mockGW) ProviderRefreshConfigure(string, gateway.ProviderRefreshOpts) error     { return nil }
+func (m *mockGW) ProviderRefreshRotate(string, string) error                             { return nil }
 
 func setupTestProfile(t *testing.T) string {
 	t.Helper()
