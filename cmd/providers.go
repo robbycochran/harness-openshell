@@ -265,10 +265,11 @@ func registerGWS(gw gateway.Gateway, enabled func(string) bool) error {
 			"client_id=" + creds.ClientID,
 			"client_secret=" + creds.ClientSecret,
 			"refresh_token=" + creds.RefreshToken,
-			"scopes=https://www.googleapis.com/auth/gmail.readonly" +
+			"scopes=" +
+				"https://www.googleapis.com/auth/gmail.readonly" +
 				" https://www.googleapis.com/auth/calendar.readonly" +
 				" https://www.googleapis.com/auth/drive.readonly" +
-				" https://www.googleapis.com/auth/tasks",
+				" https://www.googleapis.com/auth/tasks.readonly",
 		},
 		SecretMaterialKeys: []string{"client_secret", "refresh_token"},
 	}); err != nil {

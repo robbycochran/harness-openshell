@@ -74,7 +74,7 @@ endpoints:
   - host: tasks.googleapis.com
     port: 443
     protocol: rest
-    access: read-write
+    access: read-only
     enforcement: enforce
   - host: oauth2.googleapis.com
     port: 443
@@ -90,5 +90,3 @@ endpoints:
 binaries:
   - /usr/local/bin/gws
   - /sandbox/.local/bin/gws
-  - /usr/bin/curl
-  - /usr/local/bin/curl
