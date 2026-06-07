@@ -47,3 +47,49 @@ jobs:
         with:
           name: gateway-logs-local
           path: /tmp/gateway-logs/
+
+  kind:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build harness CLI
+        run: make cli
+
+      - name: Install openshell
+        run: curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
+
+      - name: Install kind
+        run: |
+          curl -Lo /usr/local/bin/kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+          chmod +x /usr/local/bin/kind
+
+      - name: Install helm
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Create kind cluster
+        run: kind create cluster --name openshell --wait 60s
+
+      - name: Deploy gateway to kind
+        run: ./harness deploy kind
+
+      - name: Run integration tests
+        run: ./test/test-flow.sh kind --full --no-providers --profile=ci
+
+      - name: Export logs
+        if: always()
+        run: |
+          mkdir -p /tmp/kind-logs
+          kubectl -n openshell logs statefulset/openshell > /tmp/kind-logs/gateway.log 2>/dev/null || true
+          kubectl -n openshell get all > /tmp/kind-logs/resources.txt 2>&1 || true
+          openshell gateway list > /tmp/kind-logs/gateways.txt 2>&1 || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gateway-logs-kind
+          path: /tmp/kind-logs/
