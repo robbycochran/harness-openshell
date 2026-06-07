@@ -259,18 +259,15 @@ test_gws() {
       'echo "$GOOGLE_WORKSPACE_CLI_TOKEN" | grep -q "openshell:resolve:env"'
 
   # Real API call works through proxy (token resolved on the wire)
+  # Note: sandbox exec rejects newlines in args — keep curl on one line.
   step "gws: Gmail API via proxy" \
-    "$CLI" sandbox exec --name "$sandbox_name" -- bash -c \
-      'curl -sf https://gmail.googleapis.com/gmail/v1/users/me/profile \
-        -H "Authorization: Bearer $GOOGLE_WORKSPACE_CLI_TOKEN" -o /dev/null'
+    "$CLI" sandbox exec --name "$sandbox_name" -- bash -c 'curl -sf https://gmail.googleapis.com/gmail/v1/users/me/profile -H "Authorization: Bearer $GOOGLE_WORKSPACE_CLI_TOKEN" -o /dev/null'
 
   # Force gateway token rotation, verify sandbox still works
   openshell provider refresh rotate gws \
     --credential-key GOOGLE_WORKSPACE_CLI_TOKEN &>/dev/null
   step "gws: works after rotation" \
-    "$CLI" sandbox exec --name "$sandbox_name" -- bash -c \
-      'curl -sf https://gmail.googleapis.com/gmail/v1/users/me/profile \
-        -H "Authorization: Bearer $GOOGLE_WORKSPACE_CLI_TOKEN" -o /dev/null'
+    "$CLI" sandbox exec --name "$sandbox_name" -- bash -c 'curl -sf https://gmail.googleapis.com/gmail/v1/users/me/profile -H "Authorization: Bearer $GOOGLE_WORKSPACE_CLI_TOKEN" -o /dev/null'
 
   echo ""
 }
