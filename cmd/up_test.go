@@ -190,6 +190,7 @@ func TestProfileHasCustomProviders(t *testing.T) {
 }
 
 func TestUpLocal_SandboxCreateOpts(t *testing.T) {
+	t.Setenv("SANDBOX_IMAGE", "") // prevent env leak from Makefile into profile.From check
 	dir := setupTestProfile(t)
 	gw := &mockGW{
 		providerList: []string{"github", "vertex-local"},

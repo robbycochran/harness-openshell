@@ -49,6 +49,7 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 			if sandboxName != "" {
 				cfg.Name = sandboxName
 			}
+			injectAtlassianEnv(cfg)
 
 			status.Section("Profile")
 			fmt.Printf("  Name: %s\n", cfg.Name)
@@ -200,19 +201,6 @@ func createDirect(harnessDir string, gw gateway.Gateway, profileName string, cfg
 		candidate := filepath.Join(harnessDir, cfg.From)
 		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
 			cfg.From = candidate
-		}
-	}
-
-	providersPath := filepath.Join(harnessDir, "providers.toml")
-	if allProviders, err := preflight.LoadProviders(providersPath); err == nil {
-		providerEnv := preflight.ProviderEnvVars(allProviders, cfg.Providers)
-		if cfg.Env == nil {
-			cfg.Env = make(map[string]string)
-		}
-		for k, v := range providerEnv {
-			if _, exists := cfg.Env[k]; !exists {
-				cfg.Env[k] = v
-			}
 		}
 	}
 

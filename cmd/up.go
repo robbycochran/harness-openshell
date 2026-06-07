@@ -11,7 +11,6 @@ import (
 
 	"github.com/robbycochran/harness-openshell/internal/gateway"
 	"github.com/robbycochran/harness-openshell/internal/k8s"
-	"github.com/robbycochran/harness-openshell/internal/preflight"
 	"github.com/robbycochran/harness-openshell/internal/profile"
 	"github.com/robbycochran/harness-openshell/internal/status"
 	"github.com/spf13/cobra"
@@ -113,11 +112,6 @@ func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gatewa
 		}
 	}
 
-	// 3. Ensure credentials
-	if err := ensureCreds(kc, namespace, false); err != nil {
-		return fmt.Errorf("credentials setup failed: %w", err)
-	}
-
 	// Parse profile
 	cfg, err := profile.Parse(harnessDir, profileName)
 	if err != nil {
@@ -126,6 +120,7 @@ func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gatewa
 	if sandboxName != "" {
 		cfg.Name = sandboxName
 	}
+	injectAtlassianEnv(cfg)
 
 	// Resolve sandbox image for remote deploys.
 	// SANDBOX_IMAGE env var overrides everything (dev/CI builds).
@@ -306,9 +301,13 @@ func upLocal(opts upLocalOpts) error {
 	if opts.sandboxName != "" {
 		cfg.Name = opts.sandboxName
 	}
+	injectAtlassianEnv(cfg)
 
-	// Resolve Dockerfile path relative to harnessDir
-	if cfg.From != "" && !filepath.IsAbs(cfg.From) {
+	// SANDBOX_IMAGE env var overrides the profile's image (dev/CI builds).
+	if envImage := os.Getenv("SANDBOX_IMAGE"); envImage != "" {
+		cfg.From = envImage
+	} else if cfg.From != "" && !filepath.IsAbs(cfg.From) {
+		// Resolve Dockerfile path relative to harnessDir
 		candidate := filepath.Join(opts.harnessDir, cfg.From)
 		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
 			cfg.From = candidate
@@ -334,21 +333,7 @@ func upLocal(opts upLocalOpts) error {
 		status.Warn("no providers available — run: harness providers")
 	}
 
-	// 5. Inject non-secret provider env vars into sandbox env
-	providersPath := filepath.Join(opts.harnessDir, "providers.toml")
-	if allProviders, err := preflight.LoadProviders(providersPath); err == nil {
-		providerEnv := preflight.ProviderEnvVars(allProviders, cfg.Providers)
-		if cfg.Env == nil {
-			cfg.Env = make(map[string]string)
-		}
-		for k, v := range providerEnv {
-			if _, exists := cfg.Env[k]; !exists {
-				cfg.Env[k] = v
-			}
-		}
-	}
-
-	// 6. Stage files
+	// 5. Stage files
 	// The upload preserves the source dir name as a subdirectory at the destination.
 	// startup.sh expects files at /sandbox/.config/openshell/sandbox.env, so the
 	// staging dir must be named "openshell".
@@ -405,6 +390,22 @@ func upLocal(opts upLocalOpts) error {
 		time.Sleep(opts.retrySleep)
 	}
 	return nil // unreachable but required by compiler
+}
+
+// injectAtlassianEnv adds JIRA_URL and JIRA_USERNAME from the local environment
+// into cfg.Env so they land in sandbox.env. Interim until Phase 2 payload renderer
+// ships; remove when harness create renders payload/env.sh instead.
+func injectAtlassianEnv(cfg *profile.Config) {
+	if cfg.Env == nil {
+		cfg.Env = make(map[string]string)
+	}
+	for _, key := range []string{"JIRA_URL", "JIRA_USERNAME"} {
+		if _, exists := cfg.Env[key]; !exists {
+			if v := os.Getenv(key); v != "" {
+				cfg.Env[key] = v
+			}
+		}
+	}
 }
 
 func launcherEnv(gatewayEndpoint, sandboxImage string) []map[string]any {

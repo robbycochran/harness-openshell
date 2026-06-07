@@ -119,10 +119,36 @@ check_providers() {
   fi
 }
 
+sandbox_wait() {
+  # Poll for sandbox Ready, failing fast on k8s bad states (ImagePullBackOff, etc.)
+  local name="$1"
+  for i in $(seq 1 30); do
+    local phase
+    phase=$("$CLI" sandbox list 2>/dev/null | strip_ansi | awk -v n="$name" '$1==n {print $NF}')
+    [[ "$phase" == "Ready" ]] && return 0
+
+    # On k8s targets, check for pod bad states so we fail fast instead of timing out
+    if kubectl get pods -n openshell 2>/dev/null | grep -q "ImagePullBackOff\|ErrImagePull\|CrashLoopBackOff"; then
+      local bad
+      bad=$(kubectl get pods -n openshell 2>/dev/null | grep "ImagePullBackOff\|ErrImagePull\|CrashLoopBackOff" | awk '{print $1, $3}' | head -3)
+      echo "  ERROR: k8s pod in bad state: $bad" >&2
+      return 1
+    fi
+    sleep 2
+  done
+  return 1
+}
+
 sandbox_verify() {
   local name="$1"
   local phase
-  phase=$("$CLI" sandbox list 2>/dev/null | strip_ansi | awk -v n="$name" '$1==n {print $NF}')
+  if ! sandbox_wait "$name"; then
+    phase=$("$CLI" sandbox list 2>/dev/null | strip_ansi | awk -v n="$name" '$1==n {print $NF}')
+    printf "  ✗ %-35s %s\n" "sandbox ready" "(phase: ${phase:-not found})"
+    ((FAIL++))
+    return
+  fi
+  phase="Ready"
   if [[ "$phase" != "Ready" ]]; then
     printf "  ✗ %-35s\n" "sandbox ready"
     ((FAIL++))
@@ -233,18 +259,15 @@ test_gws() {
       'echo "$GOOGLE_WORKSPACE_CLI_TOKEN" | grep -q "openshell:resolve:env"'
 
   # Real API call works through proxy (token resolved on the wire)
+  # Note: sandbox exec rejects newlines in args — keep curl on one line.
   step "gws: Gmail API via proxy" \
-    "$CLI" sandbox exec --name "$sandbox_name" -- bash -c \
-      'curl -sf https://gmail.googleapis.com/gmail/v1/users/me/profile \
-        -H "Authorization: Bearer $GOOGLE_WORKSPACE_CLI_TOKEN" -o /dev/null'
+    "$CLI" sandbox exec --name "$sandbox_name" -- bash -c 'curl -sf https://gmail.googleapis.com/gmail/v1/users/me/profile -H "Authorization: Bearer $GOOGLE_WORKSPACE_CLI_TOKEN" -o /dev/null'
 
   # Force gateway token rotation, verify sandbox still works
   openshell provider refresh rotate gws \
     --credential-key GOOGLE_WORKSPACE_CLI_TOKEN &>/dev/null
   step "gws: works after rotation" \
-    "$CLI" sandbox exec --name "$sandbox_name" -- bash -c \
-      'curl -sf https://gmail.googleapis.com/gmail/v1/users/me/profile \
-        -H "Authorization: Bearer $GOOGLE_WORKSPACE_CLI_TOKEN" -o /dev/null'
+    "$CLI" sandbox exec --name "$sandbox_name" -- bash -c 'curl -sf https://gmail.googleapis.com/gmail/v1/users/me/profile -H "Authorization: Bearer $GOOGLE_WORKSPACE_CLI_TOKEN" -o /dev/null'
 
   echo ""
 }
@@ -313,19 +336,24 @@ test_ocp() {
     step "deploy" "$HARNESS" deploy --remote
   fi
 
-  step "setup providers" "$HARNESS" providers
-  step "gateway reachable" "$CLI" inference get
-  check_providers
+  if ! $NO_PROVIDERS; then
+    step "setup providers" "$HARNESS" providers
+    step "gateway reachable" "$CLI" inference get
+    check_providers
+  fi
 
   if $FULL; then
-    step_output "sandbox create (up)" "$HARNESS" up --remote
-    local sandbox_name="agent"
+    local sandbox_name
+    if $NO_PROVIDERS; then
+      # ci mode: use harness create (skips provider registration) with public ci profile
+      sandbox_name="test-ocp"
+      step_output "sandbox create" "$HARNESS" create --profile=ci --name "$sandbox_name"
+    else
+      # default mode: full up (deploy already done above, providers registered)
+      sandbox_name="agent"
+      step_output "sandbox create (up)" "$HARNESS" up --remote --name "$sandbox_name" --no-tty
+    fi
 
-    for i in $(seq 1 30); do
-      local phase=$("$CLI" sandbox list 2>/dev/null | strip_ansi | awk -v n="$sandbox_name" '$1==n {print $NF}')
-      [[ "$phase" == "Ready" ]] && break
-      sleep 2
-    done
     sandbox_verify "$sandbox_name"
     step "sandbox delete" "$CLI" sandbox delete "$sandbox_name"
   fi
