@@ -71,8 +71,8 @@ func runLaunch(cli string) error {
 		return fmt.Errorf("upload failed: %w", err)
 	}
 
-	if err := launchExecEntrypoint(agentCfg.Name, cli); err != nil {
-		return fmt.Errorf("entrypoint failed: %w", err)
+	if err := launchSetupEnv(agentCfg.Name, cli); err != nil {
+		return fmt.Errorf("env setup failed: %w", err)
 	}
 
 	fmt.Printf("\nSandbox '%s' is ready.\n", agentCfg.Name)
@@ -204,12 +204,12 @@ func launchUploadPayload(name, payloadDir, cli string) error {
 	return cmd.Run()
 }
 
-func launchExecEntrypoint(name, cli string) error {
-	fmt.Println("  Sourcing env + starting entrypoint...")
-	initCmd := ". /sandbox/.config/openshell/sandbox.env 2>/dev/null && " +
+func launchSetupEnv(name, cli string) error {
+	fmt.Println("  Setting up sandbox environment...")
+	setupCmd := ". /sandbox/.config/openshell/sandbox.env 2>/dev/null && " +
 		"cat /sandbox/.config/openshell/sandbox.env >> /sandbox/.bashrc 2>/dev/null; " +
-		"exec bash /sandbox/.config/openshell/run.sh"
-	cmd := exec.Command(cli, "sandbox", "exec", "--name", name, "--", "bash", "-c", initCmd)
+		"gh auth setup-git 2>/dev/null; true"
+	cmd := exec.Command(cli, "sandbox", "exec", "--name", name, "--", "bash", "-c", setupCmd)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
