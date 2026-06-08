@@ -31,9 +31,9 @@ jobs:
         with:
           images: ${{ env.IMAGE_BASE }}
           tags: |
-            type=raw,value=sandbox,enable={{is_default_branch}}
             type=semver,pattern=sandbox-v{{version}}
             type=ref,event=pr,prefix=sandbox-pr-
+            type=sha,prefix=sandbox-
       - uses: docker/build-push-action@v6
         with:
           context: sandbox
@@ -41,9 +41,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: |
-            type=registry,ref=${{ env.IMAGE_BASE }}:sandbox-cache
-            type=registry,ref=${{ env.IMAGE_BASE }}:sandbox
+          cache-from: type=registry,ref=${{ env.IMAGE_BASE }}:sandbox-cache
           cache-to: type=registry,ref=${{ env.IMAGE_BASE }}:sandbox-cache,mode=max
 
   runner:
@@ -70,9 +68,9 @@ jobs:
         with:
           images: ${{ env.IMAGE_BASE }}
           tags: |
-            type=raw,value=runner,enable={{is_default_branch}}
             type=semver,pattern=runner-v{{version}}
             type=ref,event=pr,prefix=runner-pr-
+            type=sha,prefix=runner-
       - uses: docker/build-push-action@v6
         with:
           context: build/runner
@@ -80,7 +78,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: |
-            type=registry,ref=${{ env.IMAGE_BASE }}:runner-cache
-            type=registry,ref=${{ env.IMAGE_BASE }}:runner
+          cache-from: type=registry,ref=${{ env.IMAGE_BASE }}:runner-cache
           cache-to: type=registry,ref=${{ env.IMAGE_BASE }}:runner-cache,mode=max

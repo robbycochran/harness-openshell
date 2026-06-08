@@ -93,9 +93,7 @@ func (c *GatewayConfig) applyDefaults() {
 	if c.Chart.CRD.URL == "" {
 		c.Chart.CRD.URL = "https://github.com/kubernetes-sigs/agent-sandbox/releases/latest/download/manifest.yaml"
 	}
-	if c.Images.Runner == "" {
-		c.Images.Runner = "ghcr.io/robbycochran/harness-openshell:runner"
-	}
+	// Runner image default left empty -- resolved by defaultRunnerImage() in cmd/up.go
 	if c.Secrets.MTLS == "" {
 		c.Secrets.MTLS = "openshell-client-tls"
 	}

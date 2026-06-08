@@ -163,13 +163,15 @@ func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gatewa
 	kc.RunKubectl(ctx, "delete", "job", jobName, "--grace-period=30")
 	kc.RunKubectl(ctx, "delete", "pod", "-l", "job-name="+jobName, "--grace-period=30")
 
-	// 6. Apply runner Job
+	// 6. Apply runner Job (gwCfg provides defaults + RUNNER_IMAGE env override)
 	runnerImage := defaultRunnerImage()
 	runnerSA := "openshell-launcher"
 	gatewayEndpoint := "https://openshell.openshell.svc.cluster.local:8080"
 	mtlsSecret := "openshell-client-tls"
 	if gwCfg != nil {
-		runnerImage = gwCfg.Images.Runner
+		if gwCfg.Images.Runner != "" {
+			runnerImage = gwCfg.Images.Runner
+		}
 		runnerSA = gwCfg.Launcher.ServiceAccount
 		gatewayEndpoint = gwCfg.Launcher.GatewayEndpoint
 		mtlsSecret = gwCfg.Secrets.MTLS
@@ -376,10 +378,14 @@ func defaultRunnerImage() string {
 func versionedImage(name string) string {
 	base := "ghcr.io/robbycochran/harness-openshell"
 	v := strings.TrimPrefix(Version, "v")
-	if v != "dev" && v != "" && !strings.Contains(v, "-") {
-		return base + ":" + name + "-v" + v
+	if v == "" || v == "dev" {
+		return base + ":" + name
 	}
-	return base + ":" + name
+	if strings.Contains(v, "-") {
+		semver := v[:strings.Index(v, "-")]
+		return base + ":" + name + "-v" + semver
+	}
+	return base + ":" + name + "-v" + v
 }
 
 func runnerEnv(gatewayEndpoint, sandboxImage string) []map[string]any {

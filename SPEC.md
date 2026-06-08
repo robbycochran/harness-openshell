@@ -104,6 +104,24 @@ In-cluster command for the runner Job. Reads agent config from `/etc/openshell/s
 | `build/runner/Dockerfile` | Runner image: harness binary + openshell CLI |
 | `sandbox/policy.yaml` | Network egress rules applied to sandboxes |
 
+## Image Tags
+
+All images are published to `ghcr.io/robbycochran/harness-openshell`. No floating tags (`:latest`, `:sandbox`, `:runner`) are used.
+
+| Trigger | Sandbox | Runner |
+|---------|---------|--------|
+| Release `v0.1.2` | `:sandbox-v0.1.2` | `:runner-v0.1.2` |
+| PR #53 | `:sandbox-pr-53` | `:runner-pr-53` |
+| Main push | `:sandbox-sha-<sha>` | `:runner-sha-<sha>` |
+
+The CLI resolves images from its embedded version (set via `-ldflags` at build time):
+
+- `v0.1.2` → `:sandbox-v0.1.2` (tagged release)
+- `v0.1.2-5-gabc1234` → `:sandbox-v0.1.2` (dev build, pins to last release tag)
+- `dev` → `:sandbox` (bare `go build` without ldflags)
+
+`SANDBOX_IMAGE` and `RUNNER_IMAGE` env vars override the version-based resolution.
+
 ## Environment Variables
 
 | Variable | Purpose |

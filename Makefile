@@ -15,12 +15,9 @@ REGISTRY      ?= ghcr.io/robbycochran/harness-openshell
 PLATFORM      := linux/amd64
 VERSION       := $(shell git describe --tags --always 2>/dev/null || echo dev)
 LDFLAGS       := -s -w -X main.version=$(VERSION)
-DEV_TAG       := dev-$(shell git rev-parse --short HEAD)
 
-SANDBOX_IMAGE      := $(REGISTRY):sandbox
-RUNNER_IMAGE       := $(REGISTRY):runner
-DEV_SANDBOX_IMAGE  := $(REGISTRY):$(DEV_TAG)-sandbox
-DEV_RUNNER_IMAGE   := $(REGISTRY):$(DEV_TAG)-runner
+DEV_SANDBOX_IMAGE  := $(REGISTRY):sandbox-$(VERSION)
+DEV_RUNNER_IMAGE   := $(REGISTRY):runner-$(VERSION)
 
 .PHONY: cli sandbox push-sandbox cli-runner runner push-runner \
         vet lint test test-local test-kind test-remote test-all \

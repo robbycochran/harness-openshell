@@ -31,9 +31,6 @@ values = "values.yaml"
 [addons]
 manifests = ["addons/rbac.yaml", "addons/route.yaml"]
 
-[images]
-runner = "ghcr.io/robbycochran/harness-openshell:runner"
-
 [ocp]
 scc-privileged = ["openshell", "openshell-sandbox"]
 scc-anyuid = ["openshell"]
