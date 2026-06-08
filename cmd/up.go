@@ -361,7 +361,8 @@ func defaultRunnerImage() string {
 	}
 	base := "ghcr.io/robbycochran/harness-openshell"
 	if Version != "dev" && Version != "" {
-		return base + ":runner-v" + Version
+		v := strings.TrimPrefix(Version, "v")
+		return base + ":runner-v" + v
 	}
 	return base + ":runner"
 }

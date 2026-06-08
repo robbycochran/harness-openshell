@@ -16,16 +16,15 @@
 ##   make runner            # build + push runner
 
 REGISTRY      ?= ghcr.io/robbycochran/harness-openshell
-DEV_REGISTRY  ?= quay.io/rcochran/openshell
-DEV_TAG       := dev-$(shell git rev-parse --short HEAD)
 PLATFORM      := linux/amd64
 VERSION       := $(shell git describe --tags --always 2>/dev/null || echo dev)
 LDFLAGS       := -s -w -X main.version=$(VERSION)
+DEV_TAG       := dev-$(shell git rev-parse --short HEAD)
 
-SANDBOX_IMAGE  := $(REGISTRY):sandbox
-RUNNER_IMAGE   := $(REGISTRY):runner
-DEV_SANDBOX_IMAGE  := $(DEV_REGISTRY):$(DEV_TAG)-sandbox
-DEV_RUNNER_IMAGE   := $(DEV_REGISTRY):$(DEV_TAG)-runner
+SANDBOX_IMAGE      := $(REGISTRY):sandbox
+RUNNER_IMAGE       := $(REGISTRY):runner
+DEV_SANDBOX_IMAGE  := $(REGISTRY):$(DEV_TAG)-sandbox
+DEV_RUNNER_IMAGE   := $(REGISTRY):$(DEV_TAG)-runner
 
 .PHONY: cli sandbox push-sandbox cli-runner runner push-runner \
         vet lint ci ci-local ci-kind \
@@ -116,7 +115,6 @@ dev-test-kind: cli ci
 
 ## Remote (OCP): unit + bats + OCP full + OCP CI
 ## Requires: KUBECONFIG set, provider credentials.
-## Builds dev images to quay.io (OCP can't pull private ghcr.io).
 dev-test-remote: cli ci dev-sandbox dev-runner
 	@test -n "$${KUBECONFIG}" || { echo "ERROR: Set KUBECONFIG for OCP (e.g. export KUBECONFIG=infracluster/kubeconfig)"; exit 1; }
 	@echo ""
@@ -131,12 +129,12 @@ dev-test-all: dev-test-local dev-test-kind dev-test-remote
 
 ## ── Dev image builds ─────────────────────────────────────────────────
 
-## Build dev sandbox image to quay.io (multi-arch)
+## Build dev sandbox image to ghcr.io
 dev-sandbox:
 	docker buildx build --platform linux/amd64,linux/arm64 -t $(DEV_SANDBOX_IMAGE) sandbox/ --push
 	@echo "Built and pushed: $(DEV_SANDBOX_IMAGE)"
 
-## Build dev runner image to quay.io
+## Build dev runner image to ghcr.io
 dev-runner: cli-runner
 	docker build --platform $(PLATFORM) -t $(DEV_RUNNER_IMAGE) build/runner/
 	docker push $(DEV_RUNNER_IMAGE)
