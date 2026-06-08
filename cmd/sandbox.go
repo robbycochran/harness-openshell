@@ -11,8 +11,8 @@ import (
 )
 
 // sandboxOpts holds the parameters that vary between callers of
-// createSandbox (upLocal vs createDirect). Everything else is
-// derived from the profile.Config passed alongside.
+// createSandbox (upLocal vs create). Everything else is derived
+// from the agent config passed alongside.
 type sandboxOpts struct {
 	harnessDir string
 	gw         gateway.Gateway

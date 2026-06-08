@@ -14,7 +14,7 @@ func setupDeployHarnessDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	os.WriteFile(filepath.Join(dir, "values-ocp.yaml"), []byte("image:\n  pullPolicy: Always\n"), 0o644)
-	os.MkdirAll(filepath.Join(dir, "profiles"), 0o755)
+	os.MkdirAll(filepath.Join(dir, "agents"), 0o755)
 	return dir
 }
 
@@ -44,7 +44,7 @@ values = "values.yaml"
 manifests = ["addons/rbac.yaml", "addons/route.yaml"]
 
 [images]
-launcher = "test-launcher:v1"
+runner = "test-runner:v1"
 
 [ocp]
 scc-privileged = ["sa1", "sa2"]

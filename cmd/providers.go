@@ -288,7 +288,7 @@ func registerGWS(harnessDir string, gw gateway.Gateway, enabled func(string) boo
 	return nil
 }
 
-// gwsProfileScopes reads the refresh.scopes list from sandbox/profiles/gws.yaml
+// gwsProfileScopes reads the refresh.scopes list from agents/providers/profiles/gws.yaml
 // and returns them as a space-separated string for use as OAuth scope material.
 func gwsProfileScopes(harnessDir string) string {
 	profilePath := filepath.Join(harnessDir, "sandbox", "profiles", "gws.yaml")

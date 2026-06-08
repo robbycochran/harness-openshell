@@ -15,10 +15,12 @@ __pycache__/
 
 # Build artifacts
 harness
-sandbox/launcher/openshell
-sandbox/launcher/launcher
-infracluster/
-dashboard.html
-.claude/
 build/runner/harness
-build/runner/openshell
+infracluster/
+.claude/
+
+# Planning artifacts (local only)
+plans/
+openshell-arch/
+strategy-dashboard.html
+dashboard.html

@@ -20,7 +20,7 @@ func Cmd(name string, args ...string) {
 			redactNext = false
 			continue
 		}
-		if a == "--credential" {
+		if a == "--credential" || a == "--material" || a == "--secret-material-key" {
 			redactNext = true
 			fmt.Fprintf(os.Stderr, " %s", a)
 			continue
