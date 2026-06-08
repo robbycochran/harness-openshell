@@ -1,5 +1,6 @@
 {
   "hasCompletedOnboarding": true,
+  "skipApiKeyPrompt": true,
   "numStartups": 1,
   "autoUpdates": false,
   "projects": {
