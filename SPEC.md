@@ -17,8 +17,7 @@ Agent configs live in `agents/*.yaml`. Each declares the sandbox image, entrypoi
 
 ```yaml
 name: agent
-image: ghcr.io/robbycochran/harness-openshell:sandbox
-entrypoint: claude --bare
+entrypoint: claude
 tty: true
 
 providers:
@@ -36,8 +35,8 @@ env:
 
 Fields:
 - `name` (required) -- sandbox name, used for `openshell sandbox connect`
-- `image` -- container image for the sandbox
-- `entrypoint` -- command to run (default: `claude --bare`)
+- `image` -- container image for the sandbox (default: version-matched from ghcr.io, override with `SANDBOX_IMAGE` env)
+- `entrypoint` -- command to run (default: `claude`)
 - `tty` -- enable TTY (default: false)
 - `task` -- path to a task.md file, passed as argument to entrypoint
 - `providers` -- list of provider profile references
@@ -104,6 +103,23 @@ In-cluster command for the runner Job. Reads agent config from `/etc/openshell/s
 | `sandbox/Dockerfile` | Sandbox image: OpenShell base + MCP servers + CLI tools |
 | `build/runner/Dockerfile` | Runner image: harness binary + openshell CLI |
 | `sandbox/policy.yaml` | Network egress rules applied to sandboxes |
+
+## Image Tags
+
+All images are published to `ghcr.io/robbycochran/harness-openshell`. No floating tags (`:latest`, `:sandbox`, `:runner`) are used.
+
+| Trigger | Sandbox | Runner |
+|---------|---------|--------|
+| Release `v0.1.2` | `:sandbox-v0.1.2` | `:runner-v0.1.2` |
+| Any push/PR | `:sandbox-<sha>` | `:runner-<sha>` |
+
+The CLI resolves images from its embedded version (set via `-ldflags` at build time):
+
+- `v0.1.2` → `:sandbox-v0.1.2` (tagged release)
+- `v0.1.2-5-gabc1234` → `:sandbox-v0.1.2-5-gabc1234` (dev build, matches `make dev-sandbox`)
+- `dev` → `:sandbox` (bare `go build` without ldflags)
+
+`SANDBOX_IMAGE` and `RUNNER_IMAGE` env vars override the version-based resolution.
 
 ## Environment Variables
 

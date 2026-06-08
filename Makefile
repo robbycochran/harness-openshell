@@ -1,65 +1,64 @@
 ## OpenShell Harness — build, push, and test
 ##
-## CI targets (no credentials, GHA-safe):
-##   make ci               # unit + bats + lint (~2min)
-##   make ci-local          # ci + local gateway integration
-##   make ci-kind           # ci + kind (self-contained cluster)
-##
-## Developer targets (credentials available):
-##   make dev-test-local    # pre-commit: unit + bats + local full + ci
-##   make dev-test-kind     # kind: self-contained lifecycle
-##   make dev-test-remote   # OCP: needs KUBECONFIG
-##   make dev-test-all      # all of the above
+## Tests (CI mode auto-detects from CI env var):
+##   make test              # unit + bats + lint (~2min)
+##   make test-local        # test + local gateway integration
+##   make test-kind         # test + kind (self-contained cluster)
+##   make test-remote       # test + OCP (needs KUBECONFIG)
+##   make test-all          # all of the above
 ##
 ## Images:
 ##   make sandbox           # build + push sandbox (multi-arch)
 ##   make runner            # build + push runner
 
 REGISTRY      ?= ghcr.io/robbycochran/harness-openshell
-DEV_REGISTRY  ?= quay.io/rcochran/openshell
-DEV_TAG       := dev-$(shell git rev-parse --short HEAD)
+CONTAINER_CLI ?= podman
 PLATFORM      := linux/amd64
+VERSION       := $(shell git describe --tags --always 2>/dev/null || echo dev)
+LDFLAGS       := -s -w -X main.version=$(VERSION)
 
-SANDBOX_IMAGE  := $(REGISTRY):sandbox
-RUNNER_IMAGE   := $(REGISTRY):runner
-DEV_SANDBOX_IMAGE  := $(DEV_REGISTRY):$(DEV_TAG)-sandbox
-DEV_RUNNER_IMAGE   := $(DEV_REGISTRY):$(DEV_TAG)-runner
+DEV_SANDBOX_IMAGE  := $(REGISTRY):sandbox-$(VERSION)
+DEV_RUNNER_IMAGE   := $(REGISTRY):runner-$(VERSION)
 
-.PHONY: cli sandbox push-sandbox cli-runner runner push-runner \
-        vet lint ci ci-local ci-kind \
-        dev-test-local dev-test-kind dev-test-remote dev-test-all \
-        dev-sandbox dev-runner clean help
+.PHONY: all cli sandbox push-sandbox cli-runner runner push-runner \
+        vet lint test test-local test-kind test-remote test-all \
+        dev-sandbox dev-runner dev-push clean help
 
 ## ── CLI ──────────────────────────────────────────────────────────────
 
+## Build CLI + sandbox image for local dev
+all: cli dev-sandbox
+
 ## Build the harness CLI binary
 cli:
-	CGO_ENABLED=0 go build -o harness .
-	@echo "Built: ./harness"
+	CGO_ENABLED=0 go build -ldflags '$(LDFLAGS)' -o harness .
+	@echo "Built: ./harness ($(VERSION))"
 
 ## ── Images ────────────────────────────────────────────────────────────
 
 ## Sandbox image (Claude Code + mcp-atlassian + gws, multi-arch)
 sandbox: sandbox/Dockerfile sandbox/startup.sh \
          sandbox/policy.yaml sandbox/CLAUDE.md sandbox/settings.json
-	docker buildx build --platform linux/amd64,linux/arm64 -t $(SANDBOX_IMAGE) sandbox/ --push
-	@echo "Built and pushed: $(SANDBOX_IMAGE) (multi-arch)"
+	-$(CONTAINER_CLI) manifest rm $(SANDBOX_IMAGE) 2>/dev/null
+	$(CONTAINER_CLI) build --platform linux/amd64 --manifest $(SANDBOX_IMAGE) sandbox/
+	$(CONTAINER_CLI) build --platform linux/arm64 --manifest $(SANDBOX_IMAGE) sandbox/
+	@echo "Built: $(SANDBOX_IMAGE) (multi-arch)"
 
 push-sandbox: sandbox
-	@echo "Already pushed by buildx"
+	$(CONTAINER_CLI) manifest push $(SANDBOX_IMAGE)
 
 ## Cross-compile harness binary for the runner image
 cli-runner:
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/runner/harness .
-	@echo "Built: build/runner/harness"
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags '$(LDFLAGS)' -o build/runner/harness .
+	@echo "Built: build/runner/harness ($(VERSION))"
 
 ## Runner image (harness binary + openshell CLI)
 runner: cli-runner build/runner/Dockerfile
-	docker build --platform $(PLATFORM) -t $(RUNNER_IMAGE) build/runner/
+	$(CONTAINER_CLI) build --platform $(PLATFORM) -t $(RUNNER_IMAGE) build/runner/
 	@echo "Built: $(RUNNER_IMAGE)"
 
 push-runner: runner
-	docker push $(RUNNER_IMAGE)
+	$(CONTAINER_CLI) push $(RUNNER_IMAGE)
 
 ## ── Lint targets ─────────────────────────────────────────────────────
 
@@ -76,69 +75,58 @@ lint:
 		$(MAKE) vet; \
 	fi
 
-## ── CI targets (no credentials, GHA-safe) ────────────────────────────
+## ── Test targets ──────────────────────────────────────────────────────
+## CI mode auto-detects from the CI env var (set by GitHub Actions).
+## Locally: full tests with credentials. On GHA: no-credential mode.
 
 ## Unit tests + bats + lint (fast, ~2min, no gateway needed)
-ci: vet
+test: vet
 	CGO_ENABLED=0 go test ./...
 	bats test/preflight.bats
 
-## CI + local gateway integration (ci mode, no credentials)
-ci-local: cli ci
-	./test/test-flow.sh local --ci
+## Local gateway integration
+test-local: cli test
+	./test/test-flow.sh local
 
-## CI + kind gateway integration (self-contained, isolated kubeconfig)
-ci-kind: cli ci
-	./test/kind-lifecycle.sh --ci
-
-## ── Developer targets (credentials available) ────────────────────────
-
-## Pre-commit local: unit + bats + local full + local CI
-## Requires: openshell gateway running locally, provider credentials.
-dev-test-local: cli ci
-	@echo ""
-	@echo "=== Integration: local (full) ==="
-	./test/test-flow.sh local --full
-	@echo ""
-	@echo "=== Integration: local (ci) ==="
-	./test/test-flow.sh local --ci
-
-## Kind: unit + bats + kind full (self-contained lifecycle)
-## Creates/destroys its own kind cluster. Never touches your OCP kubectl context.
+## Kind: self-contained cluster lifecycle
 ## Builds sandbox image locally and pre-loads into kind (no registry push needed).
 ## Use KEEP=1 to keep the cluster after tests (for debugging).
-dev-test-kind: cli ci
-	docker build -t $(DEV_SANDBOX_IMAGE) sandbox/
+test-kind: cli test
+	$(CONTAINER_CLI) build -t $(DEV_SANDBOX_IMAGE) sandbox/
 	@echo ""
 	SANDBOX_IMAGE=$(DEV_SANDBOX_IMAGE) ./test/kind-lifecycle.sh $(if $(KEEP),--keep)
 
-## Remote (OCP): unit + bats + OCP full + OCP CI
-## Requires: KUBECONFIG set, provider credentials.
-## Builds dev images to quay.io (OCP can't pull private ghcr.io).
-dev-test-remote: cli ci dev-sandbox dev-runner
+## Remote (OCP): requires KUBECONFIG set
+test-remote: cli test dev-sandbox dev-runner
 	@test -n "$${KUBECONFIG}" || { echo "ERROR: Set KUBECONFIG for OCP (e.g. export KUBECONFIG=infracluster/kubeconfig)"; exit 1; }
 	@echo ""
-	@echo "=== Integration: OCP (full) ==="
-	SANDBOX_IMAGE=$(DEV_SANDBOX_IMAGE) RUNNER_IMAGE=$(DEV_RUNNER_IMAGE) ./test/test-flow.sh ocp --full
-	@echo ""
-	@echo "=== Integration: OCP (ci) ==="
-	RUNNER_IMAGE=$(DEV_RUNNER_IMAGE) ./test/test-flow.sh ocp --ci
+	SANDBOX_IMAGE=$(DEV_SANDBOX_IMAGE) RUNNER_IMAGE=$(DEV_RUNNER_IMAGE) ./test/test-flow.sh ocp
 
 ## All: local + kind + remote
-dev-test-all: dev-test-local dev-test-kind dev-test-remote
+test-all: test-local test-kind test-remote
 
 ## ── Dev image builds ─────────────────────────────────────────────────
 
-## Build dev sandbox image to quay.io (multi-arch)
+## Build dev sandbox image locally (native arch only)
 dev-sandbox:
-	docker buildx build --platform linux/amd64,linux/arm64 -t $(DEV_SANDBOX_IMAGE) sandbox/ --push
-	@echo "Built and pushed: $(DEV_SANDBOX_IMAGE)"
+	$(CONTAINER_CLI) build -t $(DEV_SANDBOX_IMAGE) sandbox/
+	@echo "Built: $(DEV_SANDBOX_IMAGE)"
 
-## Build dev runner image to quay.io
+## Build dev runner image locally
 dev-runner: cli-runner
-	docker build --platform $(PLATFORM) -t $(DEV_RUNNER_IMAGE) build/runner/
-	docker push $(DEV_RUNNER_IMAGE)
-	@echo "Built and pushed: $(DEV_RUNNER_IMAGE)"
+	$(CONTAINER_CLI) build --platform $(PLATFORM) -t $(DEV_RUNNER_IMAGE) build/runner/
+	@echo "Built: $(DEV_RUNNER_IMAGE)"
+
+## Build and push dev images (sandbox: multi-arch, runner: amd64)
+dev-push: cli-runner
+	-$(CONTAINER_CLI) rmi $(DEV_SANDBOX_IMAGE) 2>/dev/null
+	-$(CONTAINER_CLI) manifest rm $(DEV_SANDBOX_IMAGE) 2>/dev/null
+	$(CONTAINER_CLI) build --platform linux/amd64 --manifest $(DEV_SANDBOX_IMAGE) sandbox/
+	$(CONTAINER_CLI) build --platform linux/arm64 --manifest $(DEV_SANDBOX_IMAGE) sandbox/
+	$(CONTAINER_CLI) manifest push $(DEV_SANDBOX_IMAGE)
+	$(CONTAINER_CLI) build --platform $(PLATFORM) -t $(DEV_RUNNER_IMAGE) build/runner/
+	$(CONTAINER_CLI) push $(DEV_RUNNER_IMAGE)
+	@echo "Pushed: $(DEV_SANDBOX_IMAGE) (multi-arch) $(DEV_RUNNER_IMAGE) (amd64)"
 
 ## ── Convenience targets ───────────────────────────────────────────────
 

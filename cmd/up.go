@@ -136,9 +136,11 @@ func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gatewa
 		}
 	}
 
-	// Resolve sandbox image
+	// Resolve sandbox image: agent config > SANDBOX_IMAGE env > version default
 	sandboxImage := agentCfg.Image
-	if envImage := os.Getenv("SANDBOX_IMAGE"); envImage != "" {
+	if sandboxImage == "" {
+		sandboxImage = defaultSandboxImage()
+	} else if envImage := os.Getenv("SANDBOX_IMAGE"); envImage != "" {
 		sandboxImage = envImage
 	}
 
@@ -161,13 +163,15 @@ func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gatewa
 	kc.RunKubectl(ctx, "delete", "job", jobName, "--grace-period=30")
 	kc.RunKubectl(ctx, "delete", "pod", "-l", "job-name="+jobName, "--grace-period=30")
 
-	// 6. Apply runner Job
+	// 6. Apply runner Job (gwCfg provides defaults + RUNNER_IMAGE env override)
 	runnerImage := defaultRunnerImage()
 	runnerSA := "openshell-launcher"
 	gatewayEndpoint := "https://openshell.openshell.svc.cluster.local:8080"
 	mtlsSecret := "openshell-client-tls"
 	if gwCfg != nil {
-		runnerImage = gwCfg.Images.Runner
+		if gwCfg.Images.Runner != "" {
+			runnerImage = gwCfg.Images.Runner
+		}
 		runnerSA = gwCfg.Launcher.ServiceAccount
 		gatewayEndpoint = gwCfg.Launcher.GatewayEndpoint
 		mtlsSecret = gwCfg.Secrets.MTLS
@@ -312,7 +316,9 @@ func upLocal(opts upLocalOpts) error {
 	noTTY := opts.noTTY || agentCfg.NoTTY()
 
 	sandboxImage := agentCfg.Image
-	if envImage := os.Getenv("SANDBOX_IMAGE"); envImage != "" {
+	if sandboxImage == "" {
+		sandboxImage = defaultSandboxImage()
+	} else if envImage := os.Getenv("SANDBOX_IMAGE"); envImage != "" {
 		sandboxImage = envImage
 	}
 
@@ -355,15 +361,26 @@ func upLocal(opts upLocalOpts) error {
 
 var Version = "dev"
 
+func defaultSandboxImage() string {
+	if v := os.Getenv("SANDBOX_IMAGE"); v != "" {
+		return v
+	}
+	return versionedImage("sandbox")
+}
+
 func defaultRunnerImage() string {
 	if v := os.Getenv("RUNNER_IMAGE"); v != "" {
 		return v
 	}
+	return versionedImage("runner")
+}
+
+func versionedImage(name string) string {
 	base := "ghcr.io/robbycochran/harness-openshell"
-	if Version != "dev" && Version != "" {
-		return base + ":runner-v" + Version
+	if Version == "" || Version == "dev" {
+		return base + ":" + name
 	}
-	return base + ":runner"
+	return base + ":" + name + "-" + Version
 }
 
 func runnerEnv(gatewayEndpoint, sandboxImage string) []map[string]any {

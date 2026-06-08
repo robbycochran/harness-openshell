@@ -21,7 +21,7 @@ enabled = ["github", "vertex-local", "atlassian", "gws"]
 
 [chart]
 oci = "oci://ghcr.io/nvidia/openshell/helm-chart"
-version = "0.0.55"
+version = "0.0.58"
 [chart.crd]
 url = "https://github.com/kubernetes-sigs/agent-sandbox/releases/latest/download/manifest.yaml"
 
@@ -30,9 +30,6 @@ values = "values.yaml"
 
 [addons]
 manifests = ["addons/rbac.yaml", "addons/route.yaml"]
-
-[images]
-runner = "ghcr.io/robbycochran/harness-openshell:runner"
 
 [ocp]
 scc-privileged = ["openshell", "openshell-sandbox"]

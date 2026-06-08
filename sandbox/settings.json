@@ -4,5 +4,10 @@
     "allow": ["Bash(*)", "Read(*)", "Write(*)", "Edit(*)", "Glob(*)", "Grep(*)", "WebFetch(*)", "WebSearch(*)", "mcp__*"],
     "deny": []
   },
-  "trustedMcpServers": ["atlassian"]
+  "enableAllProjectMcpServers": true,
+  "trustedMcpServers": ["atlassian"],
+  "skipDangerousModePermissionPrompt": true,
+  "env": {
+    "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1"
+  }
 }
