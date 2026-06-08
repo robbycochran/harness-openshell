@@ -32,8 +32,7 @@ jobs:
           images: ${{ env.IMAGE_BASE }}
           tags: |
             type=semver,pattern=sandbox-v{{version}}
-            type=ref,event=pr,prefix=sandbox-pr-
-            type=sha,prefix=sandbox-
+            type=sha,prefix=sandbox-,format=short
       - uses: docker/build-push-action@v6
         with:
           context: sandbox
@@ -69,8 +68,7 @@ jobs:
           images: ${{ env.IMAGE_BASE }}
           tags: |
             type=semver,pattern=runner-v{{version}}
-            type=ref,event=pr,prefix=runner-pr-
-            type=sha,prefix=runner-
+            type=sha,prefix=runner-,format=short
       - uses: docker/build-push-action@v6
         with:
           context: build/runner

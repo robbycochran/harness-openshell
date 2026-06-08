@@ -111,8 +111,7 @@ All images are published to `ghcr.io/robbycochran/harness-openshell`. No floatin
 | Trigger | Sandbox | Runner |
 |---------|---------|--------|
 | Release `v0.1.2` | `:sandbox-v0.1.2` | `:runner-v0.1.2` |
-| PR #53 | `:sandbox-pr-53` | `:runner-pr-53` |
-| Main push | `:sandbox-sha-<sha>` | `:runner-sha-<sha>` |
+| Any push/PR | `:sandbox-<sha>` | `:runner-<sha>` |
 
 The CLI resolves images from its embedded version (set via `-ldflags` at build time):
 
