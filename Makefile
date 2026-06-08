@@ -12,6 +12,7 @@
 ##   make runner            # build + push runner
 
 REGISTRY      ?= ghcr.io/robbycochran/harness-openshell
+CONTAINER_CLI ?= podman
 PLATFORM      := linux/amd64
 VERSION       := $(shell git describe --tags --always 2>/dev/null || echo dev)
 LDFLAGS       := -s -w -X main.version=$(VERSION)
@@ -21,7 +22,7 @@ DEV_RUNNER_IMAGE   := $(REGISTRY):runner-$(VERSION)
 
 .PHONY: all cli sandbox push-sandbox cli-runner runner push-runner \
         vet lint test test-local test-kind test-remote test-all \
-        dev-sandbox dev-runner clean help
+        dev-sandbox dev-runner dev-push clean help
 
 ## ── CLI ──────────────────────────────────────────────────────────────
 
@@ -38,7 +39,7 @@ cli:
 ## Sandbox image (Claude Code + mcp-atlassian + gws, multi-arch)
 sandbox: sandbox/Dockerfile sandbox/startup.sh \
          sandbox/policy.yaml sandbox/CLAUDE.md sandbox/settings.json
-	docker buildx build --platform linux/amd64,linux/arm64 -t $(SANDBOX_IMAGE) sandbox/ --push
+	$(CONTAINER_CLI) buildx build --platform linux/amd64,linux/arm64 -t $(SANDBOX_IMAGE) sandbox/ --push
 	@echo "Built and pushed: $(SANDBOX_IMAGE) (multi-arch)"
 
 push-sandbox: sandbox
@@ -51,11 +52,11 @@ cli-runner:
 
 ## Runner image (harness binary + openshell CLI)
 runner: cli-runner build/runner/Dockerfile
-	docker build --platform $(PLATFORM) -t $(RUNNER_IMAGE) build/runner/
+	$(CONTAINER_CLI) build --platform $(PLATFORM) -t $(RUNNER_IMAGE) build/runner/
 	@echo "Built: $(RUNNER_IMAGE)"
 
 push-runner: runner
-	docker push $(RUNNER_IMAGE)
+	$(CONTAINER_CLI) push $(RUNNER_IMAGE)
 
 ## ── Lint targets ─────────────────────────────────────────────────────
 
@@ -89,7 +90,7 @@ test-local: cli test
 ## Builds sandbox image locally and pre-loads into kind (no registry push needed).
 ## Use KEEP=1 to keep the cluster after tests (for debugging).
 test-kind: cli test
-	docker build -t $(DEV_SANDBOX_IMAGE) sandbox/
+	$(CONTAINER_CLI) build -t $(DEV_SANDBOX_IMAGE) sandbox/
 	@echo ""
 	SANDBOX_IMAGE=$(DEV_SANDBOX_IMAGE) ./test/kind-lifecycle.sh $(if $(KEEP),--keep)
 
@@ -104,16 +105,21 @@ test-all: test-local test-kind test-remote
 
 ## ── Dev image builds ─────────────────────────────────────────────────
 
-## Build dev sandbox image to ghcr.io
+## Build dev sandbox image locally
 dev-sandbox:
-	docker buildx build --platform linux/amd64,linux/arm64 -t $(DEV_SANDBOX_IMAGE) sandbox/ --push
-	@echo "Built and pushed: $(DEV_SANDBOX_IMAGE)"
+	$(CONTAINER_CLI) build -t $(DEV_SANDBOX_IMAGE) sandbox/
+	@echo "Built: $(DEV_SANDBOX_IMAGE)"
 
-## Build dev runner image to ghcr.io
+## Build dev runner image locally
 dev-runner: cli-runner
-	docker build --platform $(PLATFORM) -t $(DEV_RUNNER_IMAGE) build/runner/
-	docker push $(DEV_RUNNER_IMAGE)
-	@echo "Built and pushed: $(DEV_RUNNER_IMAGE)"
+	$(CONTAINER_CLI) build --platform $(PLATFORM) -t $(DEV_RUNNER_IMAGE) build/runner/
+	@echo "Built: $(DEV_RUNNER_IMAGE)"
+
+## Push dev images to registry
+dev-push: dev-sandbox dev-runner
+	$(CONTAINER_CLI) push $(DEV_SANDBOX_IMAGE)
+	$(CONTAINER_CLI) push $(DEV_RUNNER_IMAGE)
+	@echo "Pushed: $(DEV_SANDBOX_IMAGE) $(DEV_RUNNER_IMAGE)"
 
 ## ── Convenience targets ───────────────────────────────────────────────
 
