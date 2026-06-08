@@ -51,7 +51,8 @@ push-sandbox: sandbox
 ## Cross-compile harness binary for the runner image
 cli-runner:
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/runner/harness .
-	@echo "Built: build/runner/harness"
+	cp "$$(which openshell)" build/runner/openshell
+	@echo "Built: build/runner/harness + openshell"
 
 ## Runner image (harness binary + openshell CLI)
 runner: cli-runner build/runner/Dockerfile
@@ -144,7 +145,7 @@ dev-runner: cli-runner
 
 ## Clean built binaries
 clean:
-	rm -f harness build/runner/harness
+	rm -f harness build/runner/harness build/runner/openshell
 	@echo "Cleaned binaries"
 
 ## Show available targets

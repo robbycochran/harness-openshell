@@ -20,3 +20,5 @@ sandbox/launcher/launcher
 infracluster/
 dashboard.html
 .claude/
+build/runner/harness
+build/runner/openshell
