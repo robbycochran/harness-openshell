@@ -79,7 +79,7 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool, gwCfg 
 
 	// Import custom profiles
 	status.Section("Importing custom profiles")
-	profilesDir := filepath.Join(harnessDir, "sandbox", "profiles")
+	profilesDir := filepath.Join(harnessDir, "agents", "providers", "profiles")
 	if err := gw.ProviderProfileImport(profilesDir); err != nil {
 		status.Info("already imported")
 	}
@@ -310,7 +310,7 @@ func gwsProfileScopes(harnessDir string) string {
 }
 
 func deleteCustomProfiles(harnessDir string, gw gateway.Gateway) {
-	profilesDir := filepath.Join(harnessDir, "sandbox", "profiles")
+	profilesDir := filepath.Join(harnessDir, "agents", "providers", "profiles")
 	entries, err := os.ReadDir(profilesDir)
 	if err != nil {
 		return

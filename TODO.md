@@ -43,58 +43,24 @@
 - Remove when: bash path is no longer needed for dual-testing
 - Blocked by: decision to stop maintaining bash path
 
-### Launcher consolidation
-- `sandbox/launcher/` is a separate Go module (runs in-cluster)
-- Has its own `parseConfig` duplicating `internal/profile/`
-- Can't share code (different execution context, separate binary)
-- Consider: extract shared types to a third module, or accept duplication
+### Launcher consolidation — DONE (#50)
+- ~~`sandbox/launcher/` is a separate Go module~~ → deleted, replaced by `harness launch`
+- ~~Has its own `parseConfig` duplicating `internal/profile/`~~ → uses `internal/agent/`
+- Single binary, single image (`:runner`), single config format (`agents/*.yaml`)
 
-## Profile Schema — Cross-Project Alignment
+## Agent Schema
 
-Analysis of field naming and structure against OpenShell provider profiles (#896)
-and Kaiden projects (#1272). See `profile.md` for full comparison.
+The agent config format is `agents/*.yaml` (YAML). TOML profiles are removed.
 
-### Current schema (Config struct)
+### Future fields
 
-```
-name, image, command, keep, providers, [env]
-```
-
-### Changes
-
-- [ ] Add `description` field — one line of human-readable context per profile.
-      Makes multi-profile use cases (`harness up --profile research`) self-documenting.
-      Both OpenShell and Kaiden include this.
-
-- [ ] Split `[env]` by purpose — the current `[env]` map mixes inference config
-      (`ANTHROPIC_*`), agent config (`CLAUDE_CODE_*`), provider metadata
-      (`JIRA_URL`, `JIRA_USERNAME`), and custom provider workaround paths
-      (`GOOGLE_WORKSPACE_*`). At minimum, add grouping comments in `default.toml`.
-      Longer term, consider a `[provider-config]` section for non-secret provider
-      metadata that belongs with the provider, not the sandbox. The `ANTHROPIC_*`
-      vars should eventually drop entirely when OpenShell inference automation ships.
-
-### No changes needed
-
-- **`name`** — correct term, maps to `openshell sandbox create --name`
-- **`image`** — harness-openshell differentiator (Kaiden is folder-first, we're image-first)
-- **`command`** — maps to `openshell sandbox create --command`
-- **`providers`** — correct term, matches OpenShell's provider naming throughout
-- **`keep`** — unique to harness-openshell lifecycle, neither upstream has it, that's fine
-- **TOML format** — trivially convertible to YAML (OpenShell) or JSON (Kaiden), no reason to change
-
-### Future fields (not now)
-
-- `repo` — git URL to clone into the sandbox at start (Kaiden supports this via `folder`)
-- `secrets` — non-provider secrets to inject, cleaner than stuffing credentials into `[env]`
+- [ ] `description` — one line of human-readable context per agent config
+- [ ] `repo` — git URL to clone into the sandbox at start
+- [ ] `secrets` — non-provider secrets to inject, cleaner than stuffing credentials into `env:`
 
 ## Low-Priority Cleanup (from audit)
 
-- [ ] `copyFile` in launcher: check Close error (`defer out.Close()` discards it)
-- [ ] Launcher `configureGateway`: route stderr to `os.Stderr` not `os.Stdout` (line 61)
-- [ ] Launcher `run()` helper: log errors instead of silently discarding
 - [ ] Unexport internal-only functions in `internal/preflight/` and `internal/profile/`
-- [ ] Stale comment in `providers.sh` line 18: says "default: us-east5", actual default is "global"
 - [ ] `SandboxExec`/`SandboxUpload` on Gateway interface — no callers yet (premature abstraction, but harmless)
 
 ## Testing

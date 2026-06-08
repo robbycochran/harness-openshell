@@ -32,6 +32,8 @@ func main() {
 		cli = "openshell"
 	}
 
+	root.CompletionOptions.HiddenDefaultCmd = true
+
 	root.AddCommand(
 		cmd.NewUpCmd(harnessDir, cli),
 		cmd.NewCreateCmd(harnessDir, cli),
@@ -40,6 +42,7 @@ func main() {
 		cmd.NewTeardownCmd(harnessDir, cli),
 		cmd.NewPreflightCmd(harnessDir, cli),
 		cmd.NewProvidersCmd(harnessDir, cli),
+		cmd.NewLaunchCmd(harnessDir, cli),
 	)
 
 	if err := root.Execute(); err != nil {
@@ -62,13 +65,11 @@ func detectHarnessDir() string {
 	for _, root := range roots {
 		dir := root
 		for range 5 {
-			if _, err := os.Stat(filepath.Join(dir, "profiles", "default.toml")); err == nil {
+			if _, err := os.Stat(filepath.Join(dir, "agents", "default.yaml")); err == nil {
 				return dir
 			}
 			dir = filepath.Dir(dir)
 		}
 	}
-	fmt.Fprintf(os.Stderr, "ERROR: could not detect harness directory — set HARNESS_DIR or run from the project root\n")
-	os.Exit(1)
 	return ""
 }

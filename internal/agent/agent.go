@@ -11,8 +11,8 @@ import (
 )
 
 type ProviderRef struct {
-	Type   string            `yaml:"type"`
-	Config map[string]string `yaml:"config,omitempty"`
+	Profile string            `yaml:"profile"`
+	Config  map[string]string `yaml:"config,omitempty"`
 }
 
 type AgentConfig struct {
@@ -44,7 +44,7 @@ func (c *AgentConfig) EffectiveEntrypoint() string {
 func (c *AgentConfig) ProviderNames() []string {
 	names := make([]string, len(c.Providers))
 	for i, p := range c.Providers {
-		names[i] = p.Type
+		names[i] = p.Profile
 	}
 	return names
 }
@@ -66,8 +66,8 @@ func Parse(data []byte) (*AgentConfig, error) {
 		return nil, fmt.Errorf("agent config: name is required")
 	}
 	for i, p := range cfg.Providers {
-		if p.Type == "" {
-			return nil, fmt.Errorf("agent config: providers[%d].type is required", i)
+		if p.Profile == "" {
+			return nil, fmt.Errorf("agent config: providers[%d].profile is required", i)
 		}
 	}
 	return &cfg, nil
@@ -93,7 +93,7 @@ func (c *AgentConfig) BuildEnvSh() string {
 	sort.Strings(keys)
 	var b strings.Builder
 	for _, k := range keys {
-		fmt.Fprintf(&b, "export %s=%q\n", k, env[k])
+		fmt.Fprintf(&b, "export %s=%q\n", k, os.ExpandEnv(env[k]))
 	}
 	return b.String()
 }
@@ -138,6 +138,11 @@ func RenderPayload(cfg *AgentConfig, baseDir, destDir string) error {
 	if envContent := cfg.BuildEnvSh(); envContent != "" {
 		if err := os.WriteFile(filepath.Join(destDir, "env.sh"), []byte(envContent), 0o644); err != nil {
 			return fmt.Errorf("writing env.sh: %w", err)
+		}
+		// sandbox.env is sourced by the sandbox image's startup.sh on boot,
+		// making env vars available to sandbox exec sessions.
+		if err := os.WriteFile(filepath.Join(destDir, "sandbox.env"), []byte(envContent), 0o644); err != nil {
+			return fmt.Errorf("writing sandbox.env: %w", err)
 		}
 	}
 
