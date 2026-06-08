@@ -1,8 +1,10 @@
 {
   "hasCompletedOnboarding": true,
-  "skipApiKeyPrompt": true,
   "numStartups": 1,
   "autoUpdates": false,
+  "customApiKeyResponses": {
+    "approved": ["nshell-proxy-managed"]
+  },
   "projects": {
     "/sandbox": {
       "hasTrustDialogAccepted": true,
