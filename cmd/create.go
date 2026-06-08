@@ -127,7 +127,9 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 			}
 
 			sandboxImage := agentCfg.Image
-			if envImage := os.Getenv("SANDBOX_IMAGE"); envImage != "" {
+			if sandboxImage == "" {
+				sandboxImage = defaultSandboxImage()
+			} else if envImage := os.Getenv("SANDBOX_IMAGE"); envImage != "" {
 				sandboxImage = envImage
 			}
 

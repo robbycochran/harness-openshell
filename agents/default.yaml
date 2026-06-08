@@ -5,7 +5,6 @@
 #   harness up --agent research        # uses agents/research.yaml
 
 name: agent
-image: ghcr.io/robbycochran/harness-openshell:sandbox
 entrypoint: claude
 tty: true
 

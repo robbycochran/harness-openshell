@@ -136,9 +136,11 @@ func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gatewa
 		}
 	}
 
-	// Resolve sandbox image
+	// Resolve sandbox image: agent config > SANDBOX_IMAGE env > version default
 	sandboxImage := agentCfg.Image
-	if envImage := os.Getenv("SANDBOX_IMAGE"); envImage != "" {
+	if sandboxImage == "" {
+		sandboxImage = defaultSandboxImage()
+	} else if envImage := os.Getenv("SANDBOX_IMAGE"); envImage != "" {
 		sandboxImage = envImage
 	}
 
@@ -312,7 +314,9 @@ func upLocal(opts upLocalOpts) error {
 	noTTY := opts.noTTY || agentCfg.NoTTY()
 
 	sandboxImage := agentCfg.Image
-	if envImage := os.Getenv("SANDBOX_IMAGE"); envImage != "" {
+	if sandboxImage == "" {
+		sandboxImage = defaultSandboxImage()
+	} else if envImage := os.Getenv("SANDBOX_IMAGE"); envImage != "" {
 		sandboxImage = envImage
 	}
 
@@ -355,16 +359,27 @@ func upLocal(opts upLocalOpts) error {
 
 var Version = "dev"
 
+func defaultSandboxImage() string {
+	if v := os.Getenv("SANDBOX_IMAGE"); v != "" {
+		return v
+	}
+	return versionedImage("sandbox")
+}
+
 func defaultRunnerImage() string {
 	if v := os.Getenv("RUNNER_IMAGE"); v != "" {
 		return v
 	}
+	return versionedImage("runner")
+}
+
+func versionedImage(name string) string {
 	base := "ghcr.io/robbycochran/harness-openshell"
 	if Version != "dev" && Version != "" {
 		v := strings.TrimPrefix(Version, "v")
-		return base + ":runner-v" + v
+		return base + ":" + name + "-v" + v
 	}
-	return base + ":runner"
+	return base + ":" + name
 }
 
 func runnerEnv(gatewayEndpoint, sandboxImage string) []map[string]any {

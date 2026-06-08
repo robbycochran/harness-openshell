@@ -45,6 +45,8 @@ func runLaunch(cli string) error {
 
 	if envImage := os.Getenv("SANDBOX_IMAGE"); envImage != "" {
 		agentCfg.Image = envImage
+	} else if agentCfg.Image == "" {
+		agentCfg.Image = defaultSandboxImage()
 	}
 
 	fmt.Println("=== Sandbox Runner ===")

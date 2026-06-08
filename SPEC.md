@@ -17,8 +17,7 @@ Agent configs live in `agents/*.yaml`. Each declares the sandbox image, entrypoi
 
 ```yaml
 name: agent
-image: ghcr.io/robbycochran/harness-openshell:sandbox
-entrypoint: claude --bare
+entrypoint: claude
 tty: true
 
 providers:
@@ -36,8 +35,8 @@ env:
 
 Fields:
 - `name` (required) -- sandbox name, used for `openshell sandbox connect`
-- `image` -- container image for the sandbox
-- `entrypoint` -- command to run (default: `claude --bare`)
+- `image` -- container image for the sandbox (default: version-matched from ghcr.io, override with `SANDBOX_IMAGE` env)
+- `entrypoint` -- command to run (default: `claude`)
 - `tty` -- enable TTY (default: false)
 - `task` -- path to a task.md file, passed as argument to entrypoint
 - `providers` -- list of provider profile references
