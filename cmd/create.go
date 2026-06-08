@@ -53,9 +53,16 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 				name = sandboxName
 			}
 
+			sandboxImage := agentCfg.Image
+			if sandboxImage == "" {
+				sandboxImage = defaultSandboxImage()
+			} else if envImage := os.Getenv("SANDBOX_IMAGE"); envImage != "" {
+				sandboxImage = envImage
+			}
+
 			status.Section("Agent")
 			fmt.Printf("  Name:  %s\n", name)
-			fmt.Printf("  Image: %s\n", agentCfg.Image)
+			fmt.Printf("  Image: %s\n", sandboxImage)
 
 			// 3. Validate providers are registered
 			status.Section("Providers")
@@ -124,13 +131,6 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 
 			if err := agent.RenderPayload(agentCfg, harnessDir, payloadDir); err != nil {
 				return fmt.Errorf("rendering payload: %w", err)
-			}
-
-			sandboxImage := agentCfg.Image
-			if sandboxImage == "" {
-				sandboxImage = defaultSandboxImage()
-			} else if envImage := os.Getenv("SANDBOX_IMAGE"); envImage != "" {
-				sandboxImage = envImage
 			}
 
 			cfg := &profile.Config{
