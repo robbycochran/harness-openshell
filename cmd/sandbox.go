@@ -43,15 +43,24 @@ func createSandbox(opts sandboxOpts) error {
 		}
 	}
 
-	// Stage files for upload into the sandbox.
-	tmpParent, err := os.MkdirTemp("", "harness-")
-	if err != nil {
-		return fmt.Errorf("creating staging dir: %w", err)
+	// Determine upload source: pre-rendered payload or legacy profile staging.
+	uploadSrc := opts.payloadDir
+	uploadDst := "/sandbox/.config/openshell"
+	var tmpParent string
+	if uploadSrc == "" {
+		var err error
+		tmpParent, err = os.MkdirTemp("", "harness-")
+		if err != nil {
+			return fmt.Errorf("creating staging dir: %w", err)
+		}
+		uploadSrc = filepath.Join(tmpParent, "openshell")
+		uploadDst = "/sandbox/.config"
+		if err := profile.StageHarnessDir(cfg, uploadSrc); err != nil {
+			return fmt.Errorf("staging files: %w", err)
+		}
 	}
-	defer os.RemoveAll(tmpParent)
-	harnessUploadDir := filepath.Join(tmpParent, "openshell")
-	if err := profile.StageHarnessDir(cfg, harnessUploadDir); err != nil {
-		return fmt.Errorf("staging files: %w", err)
+	if tmpParent != "" {
+		defer os.RemoveAll(tmpParent)
 	}
 
 	// Create sandbox with retry loop (up to 5 attempts).
@@ -62,8 +71,8 @@ func createSandbox(opts sandboxOpts) error {
 			Providers: opts.providers,
 			TTY:       !opts.noTTY,
 			Keep:      cfg.KeepSandbox(),
-			UploadSrc: harnessUploadDir,
-			UploadDst: "/sandbox/.config",
+			UploadSrc: uploadSrc,
+			UploadDst: uploadDst,
 			Command:   opts.sandboxCmd,
 		})
 		if err == nil {
