@@ -121,8 +121,9 @@ check_providers() {
 
 sandbox_wait() {
   # Poll for sandbox Ready, failing fast on k8s bad states (ImagePullBackOff, etc.)
+  # 60 iterations * 2s = 120s timeout (kind needs extra time for cold image pulls)
   local name="$1"
-  for i in $(seq 1 30); do
+  for i in $(seq 1 60); do
     local phase
     phase=$("$CLI" sandbox list 2>/dev/null | strip_ansi | awk -v n="$name" '$1==n {print $NF}')
     [[ "$phase" == "Ready" ]] && return 0
