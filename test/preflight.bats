@@ -493,6 +493,10 @@ EOF
 # ── CLI detection tests ──────────────────────────────────────────────
 
 @test "cli: missing openshell shows error" {
+  # Skip if openshell is installed at a system path we can't exclude
+  if [ -x /usr/bin/openshell ] || [ -x /usr/local/bin/openshell ]; then
+    skip "openshell installed at system path -- can't simulate missing CLI"
+  fi
   write_providers_toml <<'EOF'
 [[providers]]
 name = "test"
