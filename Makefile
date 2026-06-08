@@ -19,11 +19,14 @@ LDFLAGS       := -s -w -X main.version=$(VERSION)
 DEV_SANDBOX_IMAGE  := $(REGISTRY):sandbox-$(VERSION)
 DEV_RUNNER_IMAGE   := $(REGISTRY):runner-$(VERSION)
 
-.PHONY: cli sandbox push-sandbox cli-runner runner push-runner \
+.PHONY: all cli sandbox push-sandbox cli-runner runner push-runner \
         vet lint test test-local test-kind test-remote test-all \
         dev-sandbox dev-runner clean help
 
 ## ── CLI ──────────────────────────────────────────────────────────────
+
+## Build CLI + sandbox image for local dev
+all: cli dev-sandbox
 
 ## Build the harness CLI binary
 cli:
