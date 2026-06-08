@@ -1,7 +1,8 @@
 version: 2
 
 builds:
-  - env:
+  - binary: harness
+    env:
       - CGO_ENABLED=0
     goos:
       - linux
@@ -9,6 +10,8 @@ builds:
     goarch:
       - amd64
       - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
 
 archives:
   - format: tar.gz

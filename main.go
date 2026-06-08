@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var version = "dev"
+
 func main() {
 	harnessDir := detectHarnessDir()
 
@@ -18,6 +20,7 @@ func main() {
 	root := &cobra.Command{
 		Use:           "harness",
 		Short:         "OpenShell Harness — deploy and manage AI agent sandboxes",
+		Version:       version,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {

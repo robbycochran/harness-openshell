@@ -1,16 +1,14 @@
 # OpenShell Harness
 
-Orchestration CLI for [OpenShell](https://github.com/NVIDIA/OpenShell). Automates gateway deployment, provider registration, and sandbox creation across local Podman and remote Kubernetes/OpenShift targets. Wraps the `openshell` CLI -- does not replace it.
+Orchestration library and CLI for [OpenShell](https://github.com/NVIDIA/OpenShell).
+* Wraps the `openshell` CLI -- does not replace it.
+* Automates gateway deployment, provider registration, and sandbox creation across local Podman and remote Kubernetes/OpenShift targets.
 
 ## Where This Fits
 
 [OpenShell](https://github.com/NVIDIA/OpenShell) provides the runtime: gateway, sandboxes, L7 network policy, and credential proxy. It handles sandbox lifecycle and credential injection once providers are registered, but leaves gateway deployment orchestration, credential validation, and multi-target configuration to the user.
 
-[NemoClaw](https://github.com/NVIDIA/NemoClaw) is NVIDIA's reference stack for running agents inside OpenShell with managed Nemotron inference. It bundles a specific model backend and onboarding flow.
-
 This harness fills a different gap: multi-provider credential management (preflight validation, registration, health checks) across deployment targets (local Podman, kind, OpenShift) with declarative agent configs. It is model-agnostic -- the agent config chooses the entrypoint and inference backend. The harness orchestrates the infrastructure around it.
-
-The harness wraps `openshell` CLI commands. As OpenShell adds native support for provider validation, multi-target deployment, and agent config rendering, the corresponding harness code shrinks. Every workaround tracks the upstream issue that would eliminate it (see [AGENTS.md](AGENTS.md)).
 
 ## Example
 
@@ -61,7 +59,7 @@ tty: false
 ### Prerequisites
 
 - [OpenShell CLI](https://github.com/NVIDIA/OpenShell) (`brew install openshell && brew services start openshell` on macOS)
-- Podman
+- Podman/Docker
 - Go 1.23+
 
 ### Credentials
@@ -150,4 +148,4 @@ harness teardown [--sandboxes] [--providers] [--k8s]
 
 - [AGENTS.md](AGENTS.md) -- coding guidelines, project principles, workaround tracking
 - [SPEC.md](SPEC.md) -- full CLI specification
-- [PROVIDERS-SPEC.md](PROVIDERS-SPEC.md) -- provider configuration format
+- [TODO.md](TODO.md) -- roadmap and known gaps
