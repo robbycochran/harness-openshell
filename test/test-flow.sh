@@ -230,9 +230,11 @@ test_local() {
     sandbox_verify "$sandbox_name"
     step "sandbox delete" "$CLI" sandbox delete "$sandbox_name"
 
-    # Test harness create (non-interactive sandbox creation without deploy/providers)
+    # Test harness create (non-interactive sandbox creation without deploy/providers).
+    # create requires providers to already be registered — use ci profile which
+    # has no providers, so no registration needed.
     local create_name="test-create"
-    step_output "sandbox create (create)" "$HARNESS" create --name "$create_name" --agent "$PROFILE"
+    step_output "sandbox create (create)" "$HARNESS" create --name "$create_name" --agent ci
     step "sandbox verify (create)" "$CLI" sandbox exec --name "$create_name" -- echo "hello"
     step "sandbox delete (create)" "$CLI" sandbox delete "$create_name"
 

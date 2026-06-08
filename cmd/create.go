@@ -78,16 +78,16 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 				return fmt.Errorf("no providers available — run: harness providers")
 			}
 
-			// 4. Run preflight checks
-			status.Section("Preflight")
+			// 4. Load provider definitions
 			providersPath := filepath.Join(harnessDir, "providers.toml")
-			allProviders, err := preflight.LoadProviders(providersPath)
-			if err != nil {
-				status.Warn("could not load providers.toml — skipping preflight")
-			} else {
+			allProviders, _ := preflight.LoadProviders(providersPath)
+
+			// 5. Run preflight checks (only for unregistered providers)
+			if len(missing) > 0 && allProviders != nil {
+				status.Section("Preflight")
 				preflightOK := true
 				for _, p := range allProviders {
-					if !providerInList(p.Name, providerNames) {
+					if !providerInList(p.Name, missing) {
 						continue
 					}
 					ok, details := preflight.CheckProvider(p)
@@ -108,7 +108,7 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 				}
 			}
 
-			// 5. Determine whether the in-cluster runner is needed.
+			// 6. Determine whether the in-cluster runner is needed.
 			needsRunner := false
 			if !isLocal {
 				needsRunner = profileHasCustomProviders(providerNames, allProviders)
