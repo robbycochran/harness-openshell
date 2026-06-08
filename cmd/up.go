@@ -111,19 +111,7 @@ func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gatewa
 		}
 	}
 
-	// 2. Ensure providers
-	providers, err := gw.ProviderList()
-	if err != nil {
-		return fmt.Errorf("listing providers: %w", err)
-	}
-	if len(providers) == 0 {
-		status.Section("Registering providers")
-		if err := registerProviders(harnessDir, gw, false, gwCfg); err != nil {
-			return fmt.Errorf("provider registration failed: %w", err)
-		}
-	}
-
-	// 3. Parse agent config
+	// 2. Parse agent config
 	agentCfg, err := agent.ParseFile(agentPath)
 	if err != nil {
 		return err
@@ -131,6 +119,18 @@ func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gatewa
 	name := agentCfg.Name
 	if sandboxName != "" {
 		name = sandboxName
+	}
+
+	// 3. Ensure providers needed by the agent
+	providerNames := agentCfg.ProviderNames()
+	if len(providerNames) > 0 {
+		_, missing := profile.ValidateProviders(providerNames, gw)
+		if len(missing) > 0 {
+			status.Section("Registering providers")
+			if err := registerProviders(harnessDir, gw, false, gwCfg); err != nil {
+				return fmt.Errorf("provider registration failed: %w", err)
+			}
+		}
 	}
 
 	// Resolve sandbox image
@@ -262,22 +262,32 @@ func upLocal(opts upLocalOpts) error {
 		}
 	}
 
-	// 2. Ensure providers
-	providers, err := gw.ProviderList()
-	if err != nil {
-		return fmt.Errorf("listing providers: %w", err)
-	}
-	if len(providers) == 0 {
-		status.Section("Registering providers")
-		if err := registerProviders(opts.harnessDir, gw, false, opts.gwCfg); err != nil {
-			return fmt.Errorf("provider registration failed: %w", err)
-		}
-	}
-
-	// 3. Parse agent config
+	// 2. Parse agent config
 	agentCfg, err := agent.ParseFile(opts.agentPath)
 	if err != nil {
 		return err
+	}
+
+	// 3. Ensure providers needed by the agent are registered
+	providerNames := agentCfg.ProviderNames()
+	var registered []string
+	if len(providerNames) > 0 {
+		var missing []string
+		registered, missing = profile.ValidateProviders(providerNames, gw)
+		if len(missing) > 0 {
+			status.Section("Registering providers")
+			if err := registerProviders(opts.harnessDir, gw, false, opts.gwCfg); err != nil {
+				status.Warn(fmt.Sprintf("provider registration: %v", err))
+			}
+			registered, missing = profile.ValidateProviders(providerNames, gw)
+		}
+		status.Section("Providers")
+		for _, name := range registered {
+			status.OKf("%s: attached", name)
+		}
+		for _, name := range missing {
+			status.Failf("%s: not registered (skipping)", name)
+		}
 	}
 
 	// 4. Render payload
@@ -314,24 +324,6 @@ func upLocal(opts upLocalOpts) error {
 	fmt.Printf("  Image: %s\n", cfg.From)
 	if agentCfg.Task != "" {
 		fmt.Printf("  Task:  %s\n", agentCfg.Task)
-	}
-
-	// 6. Validate providers — auto-register missing ones
-	status.Section("Providers")
-	providerNames := agentCfg.ProviderNames()
-	registered, missing := profile.ValidateProviders(providerNames, gw)
-	for _, name := range registered {
-		status.OKf("%s: attached", name)
-	}
-	if len(missing) > 0 {
-		status.Info("Registering missing providers...")
-		if err := registerProviders(opts.harnessDir, gw, false, opts.gwCfg); err != nil {
-			status.Warn(fmt.Sprintf("provider registration: %v", err))
-		}
-		registered, missing = profile.ValidateProviders(providerNames, gw)
-		for _, name := range missing {
-			status.Failf("%s: not registered (skipping)", name)
-		}
 	}
 
 	// 7. Create sandbox

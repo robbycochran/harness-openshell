@@ -32,6 +32,8 @@ func main() {
 		cli = "openshell"
 	}
 
+	root.CompletionOptions.HiddenDefaultCmd = true
+
 	root.AddCommand(
 		cmd.NewUpCmd(harnessDir, cli),
 		cmd.NewCreateCmd(harnessDir, cli),
