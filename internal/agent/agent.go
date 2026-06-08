@@ -139,6 +139,11 @@ func RenderPayload(cfg *AgentConfig, baseDir, destDir string) error {
 		if err := os.WriteFile(filepath.Join(destDir, "env.sh"), []byte(envContent), 0o644); err != nil {
 			return fmt.Errorf("writing env.sh: %w", err)
 		}
+		// sandbox.env is sourced by the sandbox image's startup.sh on boot,
+		// making env vars available to sandbox exec sessions.
+		if err := os.WriteFile(filepath.Join(destDir, "sandbox.env"), []byte(envContent), 0o644); err != nil {
+			return fmt.Errorf("writing sandbox.env: %w", err)
+		}
 	}
 
 	runSh := cfg.BuildRunSh()
