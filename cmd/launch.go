@@ -57,7 +57,7 @@ func runLaunch(cli string) error {
 	providerNames := agentCfg.ProviderNames()
 	registered := checkProviders(providerNames, cli)
 
-	payloadDir := "/tmp/openshell/payload"
+	payloadDir := "/tmp/openshell-staging/openshell"
 	if err := agent.RenderPayload(agentCfg, "/etc/openshell/sandbox", payloadDir); err != nil {
 		return fmt.Errorf("rendering payload: %w", err)
 	}
@@ -168,7 +168,7 @@ func launchCreateSandbox(cfg *agent.AgentConfig, providers []string, payloadDir,
 		for _, p := range providers {
 			args = append(args, "--provider", p)
 		}
-		args = append(args, "--upload", payloadDir+":/sandbox/.config/openshell", "--no-git-ignore")
+		args = append(args, "--upload", payloadDir+":/sandbox/.config", "--no-git-ignore")
 		args = append(args, "--", "bash", "-c", envInit)
 
 		cmd := exec.Command(cli, args...)
