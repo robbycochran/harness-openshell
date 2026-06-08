@@ -116,7 +116,7 @@ All images are published to `ghcr.io/robbycochran/harness-openshell`. No floatin
 The CLI resolves images from its embedded version (set via `-ldflags` at build time):
 
 - `v0.1.2` → `:sandbox-v0.1.2` (tagged release)
-- `v0.1.2-5-gabc1234` → `:sandbox-v0.1.2` (dev build, pins to last release tag)
+- `v0.1.2-5-gabc1234` → `:sandbox-v0.1.2-5-gabc1234` (dev build, matches `make dev-sandbox`)
 - `dev` → `:sandbox` (bare `go build` without ldflags)
 
 `SANDBOX_IMAGE` and `RUNNER_IMAGE` env vars override the version-based resolution.

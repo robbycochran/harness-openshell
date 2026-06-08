@@ -377,15 +377,10 @@ func defaultRunnerImage() string {
 
 func versionedImage(name string) string {
 	base := "ghcr.io/robbycochran/harness-openshell"
-	v := strings.TrimPrefix(Version, "v")
-	if v == "" || v == "dev" {
+	if Version == "" || Version == "dev" {
 		return base + ":" + name
 	}
-	if strings.Contains(v, "-") {
-		semver := v[:strings.Index(v, "-")]
-		return base + ":" + name + "-v" + semver
-	}
-	return base + ":" + name + "-v" + v
+	return base + ":" + name + "-" + Version
 }
 
 func runnerEnv(gatewayEndpoint, sandboxImage string) []map[string]any {
