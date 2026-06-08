@@ -19,7 +19,7 @@ DEV_LAUNCHER_IMAGE := $(DEV_REGISTRY):$(DEV_TAG)-launcher
 
 .PHONY: cli sandbox push-sandbox cli-launcher launcher push-launcher \
         vet lint test-unit test test-local test-kind test-ocp test-all validate \
-        validate-local validate-local-ci validate-kind validate-kind-ci \
+        validate-local validate-local-ci validate-kind validate-kind-ci validate-kind-keep \
         validate-ocp validate-ocp-ci \
         dev-sandbox dev-launcher validate-dev clean help
 
@@ -177,30 +177,31 @@ validate-local-ci: cli
 	@echo "=== Integration: local gateway, ci mode ==="
 	./test/test-flow.sh local --ci
 
-## Default validation on kind: unit tests + full integration with user credentials.
-## Requires: kind create cluster --name openshell. Builds dev sandbox image to quay.io/rcochran.
+## Self-contained kind validation: creates cluster, runs tests, tears down.
+## No prerequisites — manages its own kind cluster and kubeconfig.
+## Never touches your OCP/cloud kubectl context.
 validate-kind: cli dev-sandbox
 	@echo "=== Unit tests ==="
 	CGO_ENABLED=0 go test ./...
 	cd sandbox/launcher && go test ./...
 	@echo ""
-	@echo "=== Integration: kind gateway, default mode ==="
-	@kubectl create namespace openshell --dry-run=client -o yaml 2>/dev/null | kubectl apply -f - 2>/dev/null || true
-	@kubectl create secret docker-registry quay-pull \
-	  --docker-server=quay.io --docker-username=rcochran \
-	  --docker-password="$$(python3 -c "import json,base64,pathlib; d=json.loads(pathlib.Path('$$HOME/.docker/config.json').read_text()); print(base64.b64decode(d['auths']['quay.io']['auth']).decode().split(':',1)[1])")" \
-	  -n openshell --dry-run=client -o yaml 2>/dev/null | kubectl apply -f - 2>/dev/null || true
-	SANDBOX_IMAGE=$(DEV_SANDBOX_IMAGE) SANDBOX_PULL_SECRET=quay-pull ./test/test-flow.sh kind --full
+	SANDBOX_IMAGE=$(DEV_SANDBOX_IMAGE) SANDBOX_PULL_SECRET=quay-pull ./test/kind-lifecycle.sh
 
-## CI validation on kind: unit tests + integration without credentials.
-## Requires: kind create cluster --name openshell
+## Self-contained kind CI validation (no credentials).
 validate-kind-ci: cli
 	@echo "=== Unit tests ==="
 	CGO_ENABLED=0 go test ./...
 	cd sandbox/launcher && go test ./...
 	@echo ""
-	@echo "=== Integration: kind gateway, ci mode ==="
-	./test/test-flow.sh kind --ci
+	./test/kind-lifecycle.sh --ci
+
+## Kind validation keeping the cluster after tests (for debugging).
+validate-kind-keep: cli dev-sandbox
+	@echo "=== Unit tests ==="
+	CGO_ENABLED=0 go test ./...
+	cd sandbox/launcher && go test ./...
+	@echo ""
+	SANDBOX_IMAGE=$(DEV_SANDBOX_IMAGE) SANDBOX_PULL_SECRET=quay-pull ./test/kind-lifecycle.sh --keep
 
 ## OCP validation with credentials (default mode). Requires: KUBECONFIG, all provider creds.
 validate-ocp: cli dev-launcher dev-sandbox
