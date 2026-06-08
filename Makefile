@@ -19,6 +19,8 @@ REGISTRY      ?= ghcr.io/robbycochran/harness-openshell
 DEV_REGISTRY  ?= quay.io/rcochran/openshell
 DEV_TAG       := dev-$(shell git rev-parse --short HEAD)
 PLATFORM      := linux/amd64
+VERSION       := $(shell git describe --tags --always 2>/dev/null || echo dev)
+LDFLAGS       := -s -w -X main.version=$(VERSION)
 
 SANDBOX_IMAGE  := $(REGISTRY):sandbox
 RUNNER_IMAGE   := $(REGISTRY):runner
@@ -34,8 +36,8 @@ DEV_RUNNER_IMAGE   := $(DEV_REGISTRY):$(DEV_TAG)-runner
 
 ## Build the harness CLI binary
 cli:
-	CGO_ENABLED=0 go build -o harness .
-	@echo "Built: ./harness"
+	CGO_ENABLED=0 go build -ldflags '$(LDFLAGS)' -o harness .
+	@echo "Built: ./harness ($(VERSION))"
 
 ## ── Images ────────────────────────────────────────────────────────────
 
@@ -50,8 +52,8 @@ push-sandbox: sandbox
 
 ## Cross-compile harness binary for the runner image
 cli-runner:
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/runner/harness .
-	@echo "Built: build/runner/harness"
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags '$(LDFLAGS)' -o build/runner/harness .
+	@echo "Built: build/runner/harness ($(VERSION))"
 
 ## Runner image (harness binary + openshell CLI)
 runner: cli-runner build/runner/Dockerfile
