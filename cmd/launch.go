@@ -173,7 +173,9 @@ func launchCreateSandbox(cfg *agent.AgentConfig, providers []string, cli string)
 		for _, p := range providers {
 			args = append(args, "--provider", p)
 		}
-		args = append(args, "--", "true")
+		args = append(args, "--", "bash", "-c",
+			". /sandbox/.config/openshell/sandbox.env 2>/dev/null && "+
+				"cat /sandbox/.config/openshell/sandbox.env >> /sandbox/.bashrc 2>/dev/null; true")
 
 		cmd := exec.Command(cli, args...)
 		cmd.Stdout = os.Stdout

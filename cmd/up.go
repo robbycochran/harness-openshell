@@ -218,7 +218,7 @@ func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gatewa
 
 	// 9. Poll job status (10 min timeout)
 	var jobStatus string
-	deadline := time.Now().Add(10 * time.Minute)
+	deadline := time.Now().Add(15 * time.Minute)
 	for time.Now().Before(deadline) {
 		jobStatus, err = kc.RunKubectl(ctx, "get", "job", jobName,
 			"-o", "jsonpath={.status.conditions[0].type}")
