@@ -18,6 +18,7 @@ import (
 func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 	var (
 		agentName   string
+		agentFile   string
 		sandboxName string
 	)
 
@@ -30,6 +31,8 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 				sandboxName = args[0]
 			}
 
+			agentPath := resolveAgentPath(harnessDir, agentName, agentFile)
+
 			gw := gateway.New(cli)
 
 			// 1. Check which gateway is active and whether it's local or remote.
@@ -41,9 +44,6 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 
 			status.Section("Gateway")
 			status.OKf("%s (%s)", activeGW.Name, activeGW.Endpoint)
-
-			// 2. Parse agent config
-			agentPath := filepath.Join(harnessDir, "agents", agentName+".yaml")
 			agentCfg, err := agent.ParseFile(agentPath)
 			if err != nil {
 				return err
@@ -154,6 +154,7 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&agentName, "agent", "default", "Agent config name (from agents/)")
+	cmd.Flags().StringVarP(&agentFile, "file", "f", "", "Path to agent YAML file (overrides --agent)")
 	cmd.Flags().StringVar(&sandboxName, "name", "", "Sandbox name (overrides agent config)")
 
 	return cmd
@@ -211,11 +212,11 @@ func loadGatewayConfigForActive(harnessDir string, active *gateway.GatewayInfo) 
 	return nil
 }
 
-func createViaRunner(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gateway, agentName, sandboxName string) error {
+func createViaRunner(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gateway, agentPath, sandboxName string) error {
 	if gwCfg == nil {
 		return fmt.Errorf("no gateway config found for remote gateway — expected gateways/<name>/gateway.toml")
 	}
-	return upRemote(harnessDir, gwCfg, gw, agentName, sandboxName)
+	return upRemote(harnessDir, gwCfg, gw, agentPath, sandboxName)
 }
 
 func providerInList(name string, providers []string) bool {

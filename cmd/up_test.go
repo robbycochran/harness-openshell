@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -16,7 +17,7 @@ func TestUpLocal_NoGateway(t *testing.T) {
 	err := upLocal(upLocalOpts{
 		harnessDir: dir,
 		gw:         gw,
-		agentName:  "default",
+		agentPath:  filepath.Join(dir, "agents", "default.yaml"),
 		noTTY:      true,
 	})
 	if err == nil {
@@ -37,7 +38,7 @@ func TestUpLocal_NoProviders_RegistersProviders(t *testing.T) {
 	err := upLocal(upLocalOpts{
 		harnessDir: dir,
 		gw:         gw,
-		agentName:  "default",
+		agentPath:  filepath.Join(dir, "agents", "default.yaml"),
 		noTTY:      true,
 	})
 	if err != nil {
@@ -55,7 +56,7 @@ func TestUpLocal_MissingProviders(t *testing.T) {
 	err := upLocal(upLocalOpts{
 		harnessDir: dir,
 		gw:         gw,
-		agentName:  "default",
+		agentPath:  filepath.Join(dir, "agents", "default.yaml"),
 		noTTY:      true,
 	})
 	if err != nil {
@@ -80,7 +81,7 @@ func TestUpLocal_AllProvidersMissing(t *testing.T) {
 	err := upLocal(upLocalOpts{
 		harnessDir: dir,
 		gw:         gw,
-		agentName:  "default",
+		agentPath:  filepath.Join(dir, "agents", "default.yaml"),
 		noTTY:      true,
 	})
 	if err != nil {
@@ -99,7 +100,7 @@ func TestUpLocal_AgentNotFound(t *testing.T) {
 	err := upLocal(upLocalOpts{
 		harnessDir: dir,
 		gw:         gw,
-		agentName:  "nonexistent",
+		agentPath:  filepath.Join(dir, "agents", "nonexistent.yaml"),
 		noTTY:      true,
 	})
 	if err == nil {
@@ -118,7 +119,7 @@ func TestUpLocal_SandboxCreateRetry(t *testing.T) {
 	err := upLocal(upLocalOpts{
 		harnessDir: dir,
 		gw:         gw,
-		agentName:  "default",
+		agentPath:  filepath.Join(dir, "agents", "default.yaml"),
 		noTTY:      true,
 		retrySleep: 0,
 	})
@@ -193,7 +194,7 @@ func TestUpLocal_SandboxCreateOpts(t *testing.T) {
 	err := upLocal(upLocalOpts{
 		harnessDir:  dir,
 		gw:          gw,
-		agentName:   "default",
+		agentPath:   filepath.Join(dir, "agents", "default.yaml"),
 		sandboxName: "custom-name",
 		noTTY:       true,
 	})

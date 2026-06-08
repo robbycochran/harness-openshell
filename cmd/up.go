@@ -22,6 +22,7 @@ func NewUpCmd(harnessDir, cli string) *cobra.Command {
 		local       bool
 		remote      bool
 		agentName   string
+		agentFile   string
 		sandboxName string
 		noTTY       bool
 	)
@@ -38,6 +39,8 @@ func NewUpCmd(harnessDir, cli string) *cobra.Command {
 				sandboxName = args[0]
 			}
 
+			agentPath := resolveAgentPath(harnessDir, agentName, agentFile)
+
 			gw := gateway.New(cli)
 
 			gwName := "local"
@@ -48,14 +51,14 @@ func NewUpCmd(harnessDir, cli string) *cobra.Command {
 			gwCfg, _ := gateway.LoadConfig(gwDir)
 
 			if remote {
-				return upRemote(harnessDir, gwCfg, gw, agentName, sandboxName)
+				return upRemote(harnessDir, gwCfg, gw, agentPath, sandboxName)
 			}
 			return upLocal(upLocalOpts{
 				harnessDir:  harnessDir,
 				gw:          gw,
 				gwCfg:       gwCfg,
 				ensureLocal: local,
-				agentName:   agentName,
+				agentPath:   agentPath,
 				sandboxName: sandboxName,
 				noTTY:       noTTY,
 				retrySleep:  5 * time.Second,
@@ -66,10 +69,18 @@ func NewUpCmd(harnessDir, cli string) *cobra.Command {
 	cmd.Flags().BoolVar(&local, "local", false, "Ensure local podman gateway")
 	cmd.Flags().BoolVar(&remote, "remote", false, "Ensure OCP gateway")
 	cmd.Flags().StringVar(&agentName, "agent", "default", "Agent config name (from agents/)")
+	cmd.Flags().StringVarP(&agentFile, "file", "f", "", "Path to agent YAML file (overrides --agent)")
 	cmd.Flags().StringVar(&sandboxName, "name", "", "Sandbox name (overrides agent config)")
 	cmd.Flags().BoolVar(&noTTY, "no-tty", false, "Non-interactive mode (for testing)")
 
 	return cmd
+}
+
+func resolveAgentPath(harnessDir, agentName, agentFile string) string {
+	if agentFile != "" {
+		return agentFile
+	}
+	return filepath.Join(harnessDir, "agents", agentName+".yaml")
 }
 
 type upLocalOpts struct {
@@ -77,13 +88,13 @@ type upLocalOpts struct {
 	gw          gateway.Gateway
 	gwCfg       *gateway.GatewayConfig
 	ensureLocal bool
-	agentName   string
+	agentPath   string
 	sandboxName string
 	noTTY       bool
 	retrySleep  time.Duration
 }
 
-func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gateway, agentName, sandboxName string) error {
+func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gateway, agentPath, sandboxName string) error {
 	ctx := context.Background()
 	namespace := k8s.DefaultNamespace()
 	kc := k8s.New("", namespace)
@@ -113,7 +124,6 @@ func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gatewa
 	}
 
 	// 3. Parse agent config
-	agentPath := filepath.Join(harnessDir, "agents", agentName+".yaml")
 	agentCfg, err := agent.ParseFile(agentPath)
 	if err != nil {
 		return err
@@ -265,8 +275,7 @@ func upLocal(opts upLocalOpts) error {
 	}
 
 	// 3. Parse agent config
-	agentPath := filepath.Join(opts.harnessDir, "agents", opts.agentName+".yaml")
-	agentCfg, err := agent.ParseFile(agentPath)
+	agentCfg, err := agent.ParseFile(opts.agentPath)
 	if err != nil {
 		return err
 	}
@@ -301,25 +310,28 @@ func upLocal(opts upLocalOpts) error {
 
 	fmt.Println()
 	fmt.Println("=== Sandbox ===")
-	fmt.Printf("  Agent: %s\n", opts.agentName)
+	fmt.Printf("  Agent: %s\n", opts.agentPath)
 	fmt.Printf("  Image: %s\n", cfg.From)
 	if agentCfg.Task != "" {
 		fmt.Printf("  Task:  %s\n", agentCfg.Task)
 	}
 
-	// 6. Validate providers
+	// 6. Validate providers — auto-register missing ones
 	status.Section("Providers")
 	providerNames := agentCfg.ProviderNames()
 	registered, missing := profile.ValidateProviders(providerNames, gw)
 	for _, name := range registered {
 		status.OKf("%s: attached", name)
 	}
-	for _, name := range missing {
-		status.Failf("%s: not registered (skipping)", name)
-	}
-	if len(missing) > 0 && len(registered) == 0 {
-		fmt.Println()
-		status.Warn("no providers available — run: harness providers")
+	if len(missing) > 0 {
+		status.Info("Registering missing providers...")
+		if err := registerProviders(opts.harnessDir, gw, false, opts.gwCfg); err != nil {
+			status.Warn(fmt.Sprintf("provider registration: %v", err))
+		}
+		registered, missing = profile.ValidateProviders(providerNames, gw)
+		for _, name := range missing {
+			status.Failf("%s: not registered (skipping)", name)
+		}
 	}
 
 	// 7. Create sandbox
