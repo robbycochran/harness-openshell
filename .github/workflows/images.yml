@@ -73,10 +73,6 @@ jobs:
           go-version-file: go.mod
       - name: Build harness binary
         run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o build/runner/harness .
-      - name: Install openshell CLI
-        run: |
-          curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh
-          cp "$(which openshell)" build/runner/openshell
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
