@@ -5,7 +5,7 @@ Automates gateway deployment, provider registration, and sandbox creation across
 
 ## Quick Start
 
-**Prerequisites:** [OpenShell](https://github.com/NVIDIA/OpenShell) installed and running, Podman, `GITHUB_TOKEN` env var set.
+**Prerequisites:** [OpenShell](https://github.com/NVIDIA/OpenShell) installed and running, Podman.
 
 ```bash
 # macOS
@@ -15,16 +15,19 @@ brew install openshell && brew services start openshell
 curl -L https://github.com/robbycochran/harness-openshell/releases/latest/download/harness_darwin_arm64 -o harness
 chmod +x harness
 
-# Set credentials
-export GITHUB_TOKEN=ghp_...
+# Set credentials (any combination -- missing ones are skipped gracefully)
+export GITHUB_TOKEN=ghp_...                   # GitHub (gh CLI in sandbox)
+export JIRA_API_TOKEN=...                     # Jira (mcp-atlassian MCP server)
+export JIRA_URL=https://your-org.atlassian.net
+export JIRA_USERNAME=you@company.com
 
 # Launch a sandbox
 ./harness up
 ```
 
-This deploys a local gateway, registers providers with available credentials, and creates a sandbox running Claude Code. The sandbox gets `gh` CLI access via the gateway's credential proxy. Add more providers (Vertex AI, Jira, GWS) by setting their credentials -- see [Credentials](#credentials) below.
+The built-in config registers three providers: GitHub, Jira, and Vertex AI. Providers with missing credentials are skipped with an info message -- you don't need all three to get started. The sandbox runs Claude Code with whatever providers are available.
 
-The binary includes a built-in default agent config. To customize, create an `agents/default.yaml` in your project directory -- it takes precedence over the builtin.
+To customize providers or add GWS, create an `agents/default.yaml` in your project directory -- it takes precedence over the builtin. See [Agent Configs](#agent-configs) below.
 
 ## Where This Fits
 

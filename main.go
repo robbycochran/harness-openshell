@@ -13,7 +13,7 @@ import (
 
 var version = "dev"
 
-//go:embed agents/default.yaml
+//go:embed agents/builtin.yaml
 var defaultAgentConfig []byte
 
 func main() {
