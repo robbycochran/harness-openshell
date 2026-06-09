@@ -42,7 +42,7 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 			}
 			isLocal := strings.Contains(activeGW.Endpoint, "127.0.0.1")
 
-			status.Section("Gateway")
+			status.Header("Gateway")
 			status.OKf("%s (%s)", activeGW.Name, activeGW.Endpoint)
 			agentCfg, err := agent.ParseFile(agentPath)
 			if err != nil {
@@ -60,12 +60,12 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 				sandboxImage = envImage
 			}
 
-			status.Section("Agent")
-			fmt.Printf("  Name:  %s\n", name)
-			fmt.Printf("  Image: %s\n", sandboxImage)
+			status.Header("Agent")
+			status.Infof("Name:  %s", name)
+			status.Infof("Image: %s", sandboxImage)
 
 			// 3. Validate providers are registered
-			status.Section("Providers")
+			status.Header("Providers")
 			providerNames := agentCfg.ProviderNames()
 			registered, missing := profile.ValidateProviders(providerNames, gw)
 			for _, n := range registered {
@@ -84,7 +84,7 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 
 			// 5. Run preflight checks (only for unregistered providers)
 			if len(missing) > 0 && allProviders != nil {
-				status.Section("Preflight")
+				status.Header("Preflight")
 				preflightOK := true
 				for _, p := range allProviders {
 					if !providerInList(p.Name, missing) {
@@ -115,7 +115,7 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 			}
 
 			// 6. Deploy the sandbox
-			status.Section("Creating sandbox")
+			status.Header("Creating sandbox")
 			if needsRunner {
 				status.Info("Custom providers detected — using in-cluster runner")
 				gwCfg := loadGatewayConfigForActive(harnessDir, activeGW)

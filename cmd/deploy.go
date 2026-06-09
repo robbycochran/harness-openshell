@@ -80,15 +80,13 @@ func deployLocal(gw gateway.Gateway) error {
 		return fmt.Errorf("openshell CLI not found. Install it first:\n  curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh")
 	}
 
-	status.Section("Container Runtime")
+	status.Header("Deploy")
 	if _, err := exec.LookPath("podman"); err != nil {
 		status.Fail("Podman not found")
 		return fmt.Errorf("podman is required")
 	}
 	out, _ := exec.Command("podman", "--version").Output()
 	status.OKf("Podman: %s", strings.TrimSpace(string(out)))
-
-	status.Section("Gateway")
 	gateways, err := gw.GatewayList()
 	if err != nil {
 		return fmt.Errorf("listing gateways: %w", err)
@@ -104,9 +102,8 @@ func deployLocal(gw gateway.Gateway) error {
 
 	if localGW == "" {
 		status.Fail("No local gateway found")
-		fmt.Println()
-		fmt.Println("  Install OpenShell (auto-registers the gateway):")
-		fmt.Println("    curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh")
+		status.Detail("Install OpenShell (auto-registers the gateway):")
+		status.Sub("curl -LsSf https://raw.githubusercontent.com/NVIDIA/OpenShell/main/install.sh | sh")
 		return fmt.Errorf("no local gateway")
 	}
 
@@ -118,15 +115,11 @@ func deployLocal(gw gateway.Gateway) error {
 		status.OKf("%s (active, reachable)", localGW)
 	} else {
 		status.Failf("%s (not responding)", localGW)
-		fmt.Println()
-		fmt.Println("  Start the gateway:")
-		fmt.Println("    macOS:  brew services start openshell")
-		fmt.Println("    Linux:  systemctl --user start openshell")
+		status.Detail("Start the gateway:")
+		status.Sub("macOS:  brew services start openshell")
+		status.Sub("Linux:  systemctl --user start openshell")
 		return fmt.Errorf("gateway not responding")
 	}
-
-	fmt.Println()
-	status.Done("Done.")
 	return nil
 }
 
@@ -150,14 +143,14 @@ func deployFromConfig(harnessDir string, gwCfg *gateway.GatewayConfig, gw gatewa
 		chartVersion = gwCfg.Chart.Version
 	}
 
-	fmt.Printf("OpenShell chart: %s\n", chartVersion)
+	status.Header("Deploy")
+	status.Infof("Chart: %s", chartVersion)
 	if kbcfg := os.Getenv("KUBECONFIG"); kbcfg != "" {
-		fmt.Printf("KUBECONFIG: %s\n", kbcfg)
+		status.Infof("KUBECONFIG: %s", kbcfg)
 	}
-	fmt.Println()
 
 	// Step 1: Namespace
-	status.Step(1, "Creating namespace")
+	status.Step(1, "Namespace")
 	clusterRunner.RunKubectl(ctx, "create", "ns", namespace)
 	if _, err := clusterRunner.RunKubectl(ctx, "label", "ns", namespace,
 		"pod-security.kubernetes.io/enforce=privileged",
@@ -167,33 +160,33 @@ func deployFromConfig(harnessDir string, gwCfg *gateway.GatewayConfig, gw gatewa
 	}
 
 	// Step 2: Sandbox CRD
-	status.Step(2, "Installing Sandbox CRD")
-	if err := clusterRunner.RunKubectlPassthrough(ctx, "apply", "-f", gwCfg.Chart.CRD.URL); err != nil {
+	status.Step(2, "Sandbox CRD")
+	if _, err := clusterRunner.RunKubectl(ctx, "apply", "-f", gwCfg.Chart.CRD.URL); err != nil {
 		return fmt.Errorf("installing sandbox CRD: %w", err)
 	}
+	status.OK("Installed")
 
 	// Step 3: Platform-specific setup
 	if gwCfg.IsOCP() {
-		status.Step(3, "Granting OpenShift SCCs")
+		status.Step(3, "OpenShift SCCs")
 		for _, sa := range gwCfg.OCP.SCCPrivileged {
 			kc.RunOC(ctx, "adm", "policy", "add-scc-to-user", "privileged", "-z", sa, "-n", namespace)
 		}
 		for _, sa := range gwCfg.OCP.SCCAnyuid {
 			kc.RunOC(ctx, "adm", "policy", "add-scc-to-user", "anyuid", "-z", sa, "-n", namespace)
 		}
-		// The sandbox controller ClusterRole and ClusterRoleBinding are
-		// included in the upstream manifest.yaml applied in step 2.
+		status.OK("Granted")
 	}
 
 	// Addon manifests (RBAC, etc.)
 	for _, manifestPath := range gwCfg.ManifestPaths() {
-		if err := kc.RunKubectlPassthrough(ctx, "apply", "-f", manifestPath); err != nil {
+		if _, err := kc.RunKubectl(ctx, "apply", "-f", manifestPath); err != nil {
 			return fmt.Errorf("applying %s: %w", filepath.Base(manifestPath), err)
 		}
 	}
 
 	// Step 4: Helm install
-	status.Step(4, "Deploying gateway via Helm")
+	status.Step(4, "Helm install")
 
 	// routeHost is needed before Helm (for OCP PKI cert SAN).
 	// gatewayURL is resolved after Helm for nodeport (service doesn't exist yet).
@@ -229,14 +222,13 @@ func deployFromConfig(harnessDir string, gwCfg *gateway.GatewayConfig, gw gatewa
 		return fmt.Errorf("helm install failed: %w", err)
 	}
 
-	status.Section("Waiting for gateway")
-	if err := kc.RunKubectlPassthrough(ctx, "rollout", "status", "statefulset/openshell", "--timeout=300s"); err != nil {
+	if _, err := kc.RunKubectl(ctx, "rollout", "status", "statefulset/openshell", "--timeout=300s"); err != nil {
 		return fmt.Errorf("gateway rollout failed: %w", err)
 	}
+	status.OK("Gateway ready")
 
 	// Step 5: CLI gateway config
-	// Resolve the gateway URL now that the service exists.
-	status.Step(5, "Configuring CLI gateway")
+	status.Step(5, "CLI gateway")
 	gatewayName := gwCfg.Gateway.Name
 
 	var gatewayURL string
@@ -305,23 +297,17 @@ func deployFromConfig(harnessDir string, gwCfg *gateway.GatewayConfig, gw gatewa
 		status.OKf("%s registered", gatewayName)
 	}
 
-	fmt.Print("  Waiting for gateway...")
 	var gwReachable bool
 	for range 30 {
 		if gw.InferenceGet() == nil {
 			gwReachable = true
-			status.OK("reachable")
 			break
 		}
 		time.Sleep(2 * time.Second)
-		fmt.Print(".")
 	}
 	if !gwReachable {
-		fmt.Println()
 		return fmt.Errorf("gateway not reachable after 60s (try: openshell inference get)")
 	}
-
-	fmt.Println()
-	status.Done("Done.")
+	status.OK("Reachable")
 	return nil
 }

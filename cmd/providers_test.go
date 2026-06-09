@@ -26,7 +26,7 @@ func TestRegisterProviders_GitHubWhenTokenSet(t *testing.T) {
 		providers: map[string]bool{},
 	}
 
-	err := registerProviders(dir, gw, false, nil)
+	err := registerProviders(dir, gw, false, nil, true)
 	if err != nil {
 		t.Fatalf("registerProviders: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestRegisterProviders_SkipsWhenTokenMissing(t *testing.T) {
 		providers: map[string]bool{},
 	}
 
-	err := registerProviders(dir, gw, false, nil)
+	err := registerProviders(dir, gw, false, nil, true)
 	if err != nil {
 		t.Fatalf("registerProviders: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestRegisterProviders_SkipsExistingProvider(t *testing.T) {
 		providers: map[string]bool{"github": true},
 	}
 
-	err := registerProviders(dir, gw, false, nil)
+	err := registerProviders(dir, gw, false, nil, true)
 	if err != nil {
 		t.Fatalf("registerProviders: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestRegisterProviders_ForceWithRunningSandboxes(t *testing.T) {
 		sandboxes: []string{"test-sandbox"},
 	}
 
-	err := registerProviders(dir, gw, true, nil)
+	err := registerProviders(dir, gw, true, nil, true)
 	if err == nil {
 		t.Fatal("expected error with --force and running sandboxes")
 	}
@@ -90,7 +90,7 @@ func TestRegisterProviders_ForceDeletesAndRecreates(t *testing.T) {
 		providers: map[string]bool{},
 	}
 
-	err := registerProviders(dir, gw, true, nil)
+	err := registerProviders(dir, gw, true, nil, true)
 	if err != nil {
 		t.Fatalf("registerProviders: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestRegisterProviders_RespectsGatewayConfig(t *testing.T) {
 	gwCfg := &gateway.GatewayConfig{}
 	gwCfg.Providers.Enabled = []string{"github"}
 
-	err := registerProviders(dir, gw, false, gwCfg)
+	err := registerProviders(dir, gw, false, gwCfg, true)
 	if err != nil {
 		t.Fatalf("registerProviders: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestRegisterProviders_ListError(t *testing.T) {
 		providerErr: fmt.Errorf("gateway unreachable"),
 	}
 
-	err := registerProviders(dir, gw, false, nil)
+	err := registerProviders(dir, gw, false, nil, true)
 	if err == nil {
 		t.Fatal("expected error when provider list fails")
 	}
