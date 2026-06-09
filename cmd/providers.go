@@ -22,7 +22,7 @@ func NewProvidersCmd(harnessDir, cli string) *cobra.Command {
 		Short: "Register providers with the gateway",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			gw := gateway.New(cli)
-			return registerProviders(harnessDir, gw, force, nil)
+			return registerProviders(harnessDir, gw, force, nil, true)
 		},
 	}
 
@@ -34,7 +34,7 @@ func NewProvidersCmd(harnessDir, cli string) *cobra.Command {
 // registerProviders registers providers with the gateway. If gwCfg is non-nil
 // and has a [providers] section, only providers in that list are registered.
 // Otherwise all providers are registered (backward-compatible behavior).
-func registerProviders(harnessDir string, gw gateway.Gateway, force bool, gwCfg *gateway.GatewayConfig) error {
+func registerProviders(harnessDir string, gw gateway.Gateway, force bool, gwCfg *gateway.GatewayConfig, standalone bool) error {
 	model := envOr("OPENSHELL_MODEL", "claude-sonnet-4-6")
 
 	// Build the set of enabled provider names from gateway config (if available)
@@ -71,21 +71,16 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool, gwCfg 
 		status.Info("Deleted existing providers")
 	}
 
+	status.Header("Providers")
+
 	// Enable providers v2
-	status.Section("Enabling providers v2")
 	if err := gw.SettingsSet("providers_v2_enabled", "true"); err != nil {
 		return fmt.Errorf("enabling providers v2: %w", err)
 	}
 
 	// Import custom profiles
-	status.Section("Importing custom profiles")
 	profilesDir := filepath.Join(harnessDir, "agents", "providers", "profiles")
-	if err := gw.ProviderProfileImport(profilesDir); err != nil {
-		status.Info("already imported")
-	}
-
-	// Register providers
-	status.Section("Registering providers")
+	gw.ProviderProfileImport(profilesDir)
 
 	if err := registerGitHub(gw, providerEnabled); err != nil {
 		return err
@@ -100,24 +95,21 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool, gwCfg 
 		return err
 	}
 
-	// Show results
-	status.Section("Providers")
-	names, err := gw.ProviderList()
-	if err != nil {
-		return fmt.Errorf("listing providers: %w", err)
+	if standalone {
+		names, err := gw.ProviderList()
+		if err != nil {
+			return fmt.Errorf("listing providers: %w", err)
+		}
+		fmt.Println()
+		for _, n := range names {
+			status.OK(n)
+		}
+		m := gw.InferenceModel()
+		if m != "" {
+			status.OKf("Inference: %s", m)
+		}
+		status.Done("Done. Launch a sandbox with: harness up --local")
 	}
-	for _, n := range names {
-		status.OK(n)
-	}
-
-	status.Section("Inference")
-	m := gw.InferenceModel()
-	if m != "" {
-		status.OKf("Model: %s", m)
-	}
-
-	fmt.Println()
-	status.Done("Done. Launch a sandbox with: harness up --local")
 	return nil
 }
 

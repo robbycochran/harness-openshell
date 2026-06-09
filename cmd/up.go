@@ -100,21 +100,7 @@ func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gatewa
 	kc := k8s.New("", namespace)
 	clusterRunner := k8s.New("", "")
 
-	// 1. Ensure gateway and namespace
-	gwReachable := gw.InferenceGet() == nil
-	_, nsErr := kc.RunKubectl(ctx, "get", "namespace", namespace)
-	nsExists := nsErr == nil
-	if !gwReachable || !nsExists {
-		if gwCfg == nil {
-			return fmt.Errorf("no active gateway and no gateway config — use: harness deploy ocp")
-		}
-		status.Section("Deploying gateway")
-		if err := deployFromConfig(harnessDir, gwCfg, gw, kc, clusterRunner); err != nil {
-			return fmt.Errorf("deploy failed: %w", err)
-		}
-	}
-
-	// 2. Parse agent config
+	// Parse agent config early so we can show context
 	agentCfg, err := agent.ParseFile(agentPath)
 	if err != nil {
 		return err
@@ -124,24 +110,39 @@ func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gatewa
 		name = sandboxName
 	}
 
-	// 3. Ensure providers needed by the agent
-	providerNames := agentCfg.ProviderNames()
-	if len(providerNames) > 0 {
-		_, missing := profile.ValidateProviders(providerNames, gw)
-		if len(missing) > 0 {
-			status.Section("Registering providers")
-			if err := registerProviders(harnessDir, gw, false, gwCfg); err != nil {
-				return fmt.Errorf("provider registration failed: %w", err)
-			}
-		}
-	}
-
-	// Resolve sandbox image: agent config > SANDBOX_IMAGE env > version default
 	sandboxImage := agentCfg.Image
 	if sandboxImage == "" {
 		sandboxImage = defaultSandboxImage()
 	} else if envImage := os.Getenv("SANDBOX_IMAGE"); envImage != "" {
 		sandboxImage = envImage
+	}
+
+	// Top-level context
+	status.Infof("Agent: %s (%s)", name, filepath.Base(agentPath))
+	status.Infof("Image: %s", sandboxImage)
+
+	// 1. Ensure gateway and namespace
+	gwReachable := gw.InferenceGet() == nil
+	_, nsErr := kc.RunKubectl(ctx, "get", "namespace", namespace)
+	nsExists := nsErr == nil
+	if !gwReachable || !nsExists {
+		if gwCfg == nil {
+			return fmt.Errorf("no active gateway and no gateway config — use: harness deploy ocp")
+		}
+		if err := deployFromConfig(harnessDir, gwCfg, gw, kc, clusterRunner); err != nil {
+			return fmt.Errorf("deploy failed: %w", err)
+		}
+	}
+
+	// 2. Ensure providers needed by the agent
+	providerNames := agentCfg.ProviderNames()
+	if len(providerNames) > 0 {
+		_, missing := profile.ValidateProviders(providerNames, gw)
+		if len(missing) > 0 {
+			if err := registerProviders(harnessDir, gw, false, gwCfg, false); err != nil {
+				return fmt.Errorf("provider registration failed: %w", err)
+			}
+		}
 	}
 
 	// 4. ConfigMap from agent.yaml
@@ -211,7 +212,7 @@ func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gatewa
 	}
 
 	// 7. Wait for runner pod
-	fmt.Println()
+	status.Header("Sandbox")
 	status.Info("Waiting for runner...")
 	kc.RunKubectl(ctx, "wait", "--for=condition=ready", "pod",
 		"-l", "job-name="+jobName, "--timeout=120s")
@@ -243,9 +244,9 @@ func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gatewa
 		logCmd.Wait()
 	}
 
-	fmt.Println()
 	if jobStatus == "Complete" || jobStatus == "SuccessCriteriaMet" {
-		status.OKf("Sandbox ready. Connect with: harness connect %s", name)
+		fmt.Println()
+		status.OKf("Connect with: harness connect %s", name)
 		return nil
 	}
 	if jobStatus == "" {
@@ -257,9 +258,33 @@ func upRemote(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gatewa
 func upLocal(opts upLocalOpts) error {
 	gw := opts.gw
 
-	// 1. Ensure gateway
+	// 1. Parse agent config
+	agentCfg, err := agent.ParseFile(opts.agentPath)
+	if err != nil {
+		return err
+	}
+	sandboxName := agentCfg.Name
+	if opts.sandboxName != "" {
+		sandboxName = opts.sandboxName
+	}
+	noTTY := opts.noTTY || agentCfg.NoTTY()
+
+	sandboxImage := agentCfg.Image
+	if sandboxImage == "" {
+		sandboxImage = defaultSandboxImage()
+	} else if envImage := os.Getenv("SANDBOX_IMAGE"); envImage != "" {
+		sandboxImage = envImage
+	}
+
+	// Top-level context
+	status.Infof("Agent: %s (%s)", sandboxName, filepath.Base(opts.agentPath))
+	status.Infof("Image: %s", sandboxImage)
+	if agentCfg.Task != "" {
+		status.Infof("Task:  %s", agentCfg.Task)
+	}
+
+	// 2. Ensure gateway
 	if opts.ensureLocal {
-		fmt.Println("=== Ensuring local gateway ===")
 		if err := deployLocal(gw); err != nil {
 			return fmt.Errorf("deploy failed: %w", err)
 		}
@@ -269,12 +294,6 @@ func upLocal(opts upLocalOpts) error {
 		}
 	}
 
-	// 2. Parse agent config
-	agentCfg, err := agent.ParseFile(opts.agentPath)
-	if err != nil {
-		return err
-	}
-
 	// 3. Ensure providers needed by the agent are registered
 	providerNames := agentCfg.ProviderNames()
 	var registered []string
@@ -282,18 +301,17 @@ func upLocal(opts upLocalOpts) error {
 		var missing []string
 		registered, missing = profile.ValidateProviders(providerNames, gw)
 		if len(missing) > 0 {
-			status.Section("Registering providers")
-			if err := registerProviders(opts.harnessDir, gw, false, opts.gwCfg); err != nil {
+			if err := registerProviders(opts.harnessDir, gw, false, opts.gwCfg, false); err != nil {
 				status.Warn(fmt.Sprintf("provider registration: %v", err))
 			}
 			registered, missing = profile.ValidateProviders(providerNames, gw)
 		}
-		status.Section("Providers")
+		status.Header("Providers")
 		for _, name := range registered {
-			status.OKf("%s: attached", name)
+			status.OKf("%s", name)
 		}
 		for _, name := range missing {
-			status.Failf("%s: not registered (skipping)", name)
+			status.Failf("%s (not registered)", name)
 		}
 	}
 
@@ -308,36 +326,13 @@ func upLocal(opts upLocalOpts) error {
 		return fmt.Errorf("rendering payload: %w", err)
 	}
 
-	// 5. Build sandbox config
-	sandboxName := agentCfg.Name
-	if opts.sandboxName != "" {
-		sandboxName = opts.sandboxName
-	}
-	noTTY := opts.noTTY || agentCfg.NoTTY()
-
-	sandboxImage := agentCfg.Image
-	if sandboxImage == "" {
-		sandboxImage = defaultSandboxImage()
-	} else if envImage := os.Getenv("SANDBOX_IMAGE"); envImage != "" {
-		sandboxImage = envImage
-	}
-
 	cfg := &profile.Config{
 		Name: sandboxName,
 		From: sandboxImage,
 	}
 
-	fmt.Println()
-	fmt.Println("=== Sandbox ===")
-	fmt.Printf("  Agent: %s\n", opts.agentPath)
-	fmt.Printf("  Image: %s\n", cfg.From)
-	if agentCfg.Task != "" {
-		fmt.Printf("  Task:  %s\n", agentCfg.Task)
-	}
-
-	// 7. Create sandbox
-	fmt.Println()
-	fmt.Println("=== Creating sandbox ===")
+	// 5. Create sandbox
+	status.Header("Sandbox")
 	envInit := ". /sandbox/.config/openshell/sandbox.env 2>/dev/null && " +
 		"cat /sandbox/.config/openshell/sandbox.env >> /sandbox/.bashrc 2>/dev/null; "
 	var sandboxCmd []string
