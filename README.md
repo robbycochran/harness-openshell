@@ -9,7 +9,7 @@ Automates gateway deployment, provider registration, and sandbox creation across
 
 ```bash
 # macOS
-brew install openshell && brew services start openshell
+brew tap nvidia/openshell && brew install openshell && brew services start openshell
 
 # Download the harness binary (macOS ARM64 shown -- see Releases for other platforms)
 curl -L https://github.com/robbycochran/harness-openshell/releases/latest/download/harness_darwin_arm64 -o harness
@@ -43,7 +43,7 @@ An agent config declares the sandbox image, entrypoint, and which providers to a
 # agents/default.yaml
 name: agent
 image: ghcr.io/robbycochran/harness-openshell:sandbox
-entrypoint: claude --bare
+entrypoint: claude
 tty: true
 
 providers:
@@ -71,7 +71,7 @@ For non-interactive task agents, set `task:` and `tty: false`:
 ```yaml
 # agents/demo.yaml
 name: demo
-entrypoint: claude --bare -p
+entrypoint: claude -p
 task: demo/DEMO-TASK.md
 tty: false
 # ... same providers and env
@@ -121,7 +121,7 @@ harness CLI ──→ openshell CLI ──→ Gateway (Podman or K8s)
                                     ├── L7 network policy
                                     ├── inference.local proxy
                                     └── Sandbox container
-                                         ├── claude --bare
+                                         ├── claude
                                          ├── gh, mcp-atlassian, gws
                                          └── placeholder tokens
 ```

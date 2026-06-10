@@ -84,7 +84,7 @@ network_policies:
       - { path: /usr/bin/git }
       - { path: /usr/local/bin/uv }
 
-  # GWS (no provider profile active — creds are uploaded files)
+  # GWS (google-workspace provider with OAuth refresh via gateway)
   google_workspace:
     name: google-workspace
     endpoints:
