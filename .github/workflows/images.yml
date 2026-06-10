@@ -33,15 +33,18 @@ jobs:
           tags: |
             type=semver,pattern=sandbox-v{{version}}
             type=sha,prefix=sandbox-,format=short
+      # PRs only validate the build — pushing (and cache writes) need a
+      # write token, which fork PRs don't have, and sha-tagged PR images
+      # would pile up in the registry.
       - uses: docker/build-push-action@v6
         with:
           context: sandbox
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=registry,ref=${{ env.IMAGE_BASE }}:sandbox-cache
-          cache-to: type=registry,ref=${{ env.IMAGE_BASE }}:sandbox-cache,mode=max
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}:sandbox-cache,mode=max', env.IMAGE_BASE) || '' }}
 
   runner:
     runs-on: ubuntu-latest
@@ -73,8 +76,8 @@ jobs:
         with:
           context: build/runner
           platforms: linux/amd64
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=registry,ref=${{ env.IMAGE_BASE }}:runner-cache
-          cache-to: type=registry,ref=${{ env.IMAGE_BASE }}:runner-cache,mode=max
+          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}:runner-cache,mode=max', env.IMAGE_BASE) || '' }}

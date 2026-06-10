@@ -74,6 +74,10 @@ func resolveGatewayName(args []string, local, remote bool) (string, error) {
 	return "", fmt.Errorf("specify a gateway: harness deploy <local|ocp|kind>")
 }
 
+// lookPath is exec.LookPath, overridable in tests to avoid a host
+// dependency on podman.
+var lookPath = exec.LookPath
+
 func deployLocal(gw gateway.Gateway) error {
 	cliPath := gw.CLIPath()
 	if cliPath == "" {
@@ -81,7 +85,7 @@ func deployLocal(gw gateway.Gateway) error {
 	}
 
 	status.Header("Deploy")
-	if _, err := exec.LookPath("podman"); err != nil {
+	if _, err := lookPath("podman"); err != nil {
 		status.Fail("Podman not found")
 		return fmt.Errorf("podman is required")
 	}
