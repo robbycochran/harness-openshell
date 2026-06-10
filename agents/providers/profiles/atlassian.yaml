@@ -2,7 +2,7 @@
 #
 # Only JIRA_API_TOKEN is a provider credential (proxy resolves it in
 # Basic auth headers). JIRA_URL and JIRA_USERNAME are non-secret config
-# uploaded to the sandbox by sandbox-ocp.sh.
+# passed via agent.yaml config field.
 
 id: atlassian
 display_name: Atlassian (Jira + Confluence)
