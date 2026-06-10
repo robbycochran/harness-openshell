@@ -71,7 +71,7 @@ For non-interactive task agents, set `task:` and `tty: false`:
 ```yaml
 # agents/demo.yaml
 name: demo
-entrypoint: claude --bare -p
+entrypoint: claude -p
 task: demo/DEMO-TASK.md
 tty: false
 # ... same providers and env
