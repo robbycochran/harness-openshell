@@ -53,18 +53,21 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 			status.Infof("Name:  %s", name)
 			status.Infof("Image: %s", sandboxImage)
 
-			// 3. Validate providers are registered
+			// 3. Ensure providers are registered
 			status.Header("Providers")
 			providerNames := agentCfg.ProviderNames()
 			registered, missing := gateway.ValidateProviders(providerNames, gw)
+			if len(missing) > 0 {
+				if err := registerProviders(harnessDir, gw, false, nil, false); err != nil {
+					status.Warn(fmt.Sprintf("provider registration: %v", err))
+				}
+				registered, missing = gateway.ValidateProviders(providerNames, gw)
+			}
 			for _, n := range registered {
 				status.OKf("%s: attached", n)
 			}
 			for _, n := range missing {
 				status.Failf("%s: not registered", n)
-			}
-			if len(missing) > 0 && len(registered) == 0 {
-				return fmt.Errorf("no providers available — run: harness providers")
 			}
 
 			// 4. Deploy the sandbox
