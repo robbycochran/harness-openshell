@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/BurntSushi/toml"
 	"github.com/robbycochran/harness-openshell/internal/gateway"
 	"github.com/robbycochran/harness-openshell/internal/k8s"
 	"github.com/robbycochran/harness-openshell/internal/status"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 func NewDeployCmd(harnessDir, cli string) *cobra.Command {
@@ -26,7 +26,7 @@ func NewDeployCmd(harnessDir, cli string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "deploy [gateway]",
 		Short: "Deploy or verify the gateway",
-		Long:  "Deploy a gateway by name (e.g., local, ocp, kind). Reads configuration from gateways/<name>/gateway.toml.",
+		Long:  "Deploy a gateway by name (e.g., local, ocp, kind). Reads configuration from gateways/<name>/gateway.yaml.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			gatewayName, err := resolveGatewayName(args, local, remote)
@@ -151,11 +151,13 @@ func deployFromConfig(harnessDir string, gwCfg *gateway.GatewayConfig, gw gatewa
 	if chartVersion == "" {
 		var oc struct {
 			Upstream struct {
-				ChartVersion string `toml:"chart-version"`
-			} `toml:"upstream"`
+				ChartVersion string `yaml:"chart-version"`
+			} `yaml:"upstream"`
 		}
-		if _, err := toml.DecodeFile(filepath.Join(harnessDir, "openshell.toml"), &oc); err == nil && oc.Upstream.ChartVersion != "" {
-			chartVersion = oc.Upstream.ChartVersion
+		if data, err := os.ReadFile(filepath.Join(harnessDir, "openshell.yaml")); err == nil {
+			if yaml.Unmarshal(data, &oc) == nil && oc.Upstream.ChartVersion != "" {
+				chartVersion = oc.Upstream.ChartVersion
+			}
 		}
 	}
 	if chartVersion == "" {
