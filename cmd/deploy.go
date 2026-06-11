@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/BurntSushi/toml"
 	"github.com/robbycochran/harness-openshell/internal/gateway"
 	"github.com/robbycochran/harness-openshell/internal/k8s"
-	"github.com/robbycochran/harness-openshell/internal/preflight"
 	"github.com/robbycochran/harness-openshell/internal/status"
 	"github.com/spf13/cobra"
 )
@@ -149,9 +149,13 @@ func deployFromConfig(harnessDir string, gwCfg *gateway.GatewayConfig, gw gatewa
 
 	chartVersion := os.Getenv("OPENSHELL_CHART_VERSION")
 	if chartVersion == "" {
-		cfg, _ := preflight.LoadConfig(filepath.Join(harnessDir, "openshell.toml"))
-		if cfg != nil && cfg.Upstream.ChartVersion != "" {
-			chartVersion = cfg.Upstream.ChartVersion
+		var oc struct {
+			Upstream struct {
+				ChartVersion string `toml:"chart-version"`
+			} `toml:"upstream"`
+		}
+		if _, err := toml.DecodeFile(filepath.Join(harnessDir, "openshell.toml"), &oc); err == nil && oc.Upstream.ChartVersion != "" {
+			chartVersion = oc.Upstream.ChartVersion
 		}
 	}
 	if chartVersion == "" {

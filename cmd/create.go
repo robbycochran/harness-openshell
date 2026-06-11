@@ -3,13 +3,10 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
-	"slices"
 	"time"
 
 	"github.com/robbycochran/harness-openshell/internal/agent"
 	"github.com/robbycochran/harness-openshell/internal/gateway"
-	"github.com/robbycochran/harness-openshell/internal/preflight"
 	"github.com/robbycochran/harness-openshell/internal/status"
 	"github.com/spf13/cobra"
 )
@@ -70,37 +67,7 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 				return fmt.Errorf("no providers available — run: harness providers")
 			}
 
-			// 4. Load provider definitions
-			providersPath := filepath.Join(harnessDir, "providers.toml")
-			allProviders, _ := preflight.LoadProviders(providersPath)
-
-			// 5. Run preflight checks (only for unregistered providers)
-			if len(missing) > 0 && allProviders != nil {
-				status.Header("Preflight")
-				preflightOK := true
-				for _, p := range allProviders {
-					if !slices.Contains(missing, p.Name) {
-						continue
-					}
-					ok, details := preflight.CheckProvider(p)
-					if ok {
-						status.OKf("%s: ready", p.Name)
-					} else {
-						status.Failf("%s: prerequisites missing", p.Name)
-						if p.Required {
-							preflightOK = false
-						}
-					}
-					for _, d := range details {
-						status.Detail(d)
-					}
-				}
-				if !preflightOK {
-					return fmt.Errorf("preflight checks failed — fix issues above")
-				}
-			}
-
-			// 6. Deploy the sandbox
+			// 4. Deploy the sandbox
 			status.Header("Creating sandbox")
 			payloadDir, err := os.MkdirTemp("", "harness-payload-")
 			if err != nil {
