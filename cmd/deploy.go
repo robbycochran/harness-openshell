@@ -13,7 +13,6 @@ import (
 	"github.com/robbycochran/harness-openshell/internal/k8s"
 	"github.com/robbycochran/harness-openshell/internal/status"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 func NewDeployCmd(harnessDir, cli string) *cobra.Command {
@@ -148,18 +147,6 @@ func deployFromConfig(harnessDir string, gwCfg *gateway.GatewayConfig, gw gatewa
 	namespace := k8s.DefaultNamespace()
 
 	chartVersion := os.Getenv("OPENSHELL_CHART_VERSION")
-	if chartVersion == "" {
-		var oc struct {
-			Upstream struct {
-				ChartVersion string `yaml:"chart-version"`
-			} `yaml:"upstream"`
-		}
-		if data, err := os.ReadFile(filepath.Join(harnessDir, "openshell.yaml")); err == nil {
-			if yaml.Unmarshal(data, &oc) == nil && oc.Upstream.ChartVersion != "" {
-				chartVersion = oc.Upstream.ChartVersion
-			}
-		}
-	}
 	if chartVersion == "" {
 		chartVersion = gwCfg.Chart.Version
 	}
