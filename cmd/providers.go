@@ -49,24 +49,24 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool, provid
 	profilesDir := filepath.Join(harnessDir, "agents", "providers", "profiles")
 	gw.ProviderProfileImport(profilesDir)
 
-	if p, ok := wanted["github"]; ok {
-		registerStandard("github", "github", gw, p.ConfigList())
+	if _, ok := wanted["github"]; ok {
+		registerStandard("github", "github", gw, nil)
 	}
-	if p, ok := wanted["vertex-local"]; ok {
+	if _, ok := wanted["vertex-local"]; ok {
 		home, _ := os.UserHomeDir()
 		adcPath := envOr("GOOGLE_APPLICATION_CREDENTIALS",
 			filepath.Join(home, ".config", "gcloud", "application_default_credentials.json"))
 		project := envOr("ANTHROPIC_VERTEX_PROJECT_ID", readADCProject(adcPath))
 		region := envOr("CLOUD_ML_REGION", "global")
-		configs := p.ConfigList()
+		var configs []string
 		if project != "" {
 			configs = append(configs, "VERTEX_AI_PROJECT_ID="+project)
 		}
 		configs = append(configs, "VERTEX_AI_REGION="+region)
 		registerADC("vertex-local", "google-vertex-ai", model, gw, configs)
 	}
-	if p, ok := wanted["atlassian"]; ok {
-		registerStandard("atlassian", "atlassian", gw, p.ConfigList())
+	if _, ok := wanted["atlassian"]; ok {
+		registerStandard("atlassian", "atlassian", gw, nil)
 	}
 	if _, ok := wanted["gws"]; ok {
 		if err := registerGWS(harnessDir, gw); err != nil {

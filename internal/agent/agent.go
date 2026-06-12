@@ -12,7 +12,7 @@ import (
 
 type ProviderRef struct {
 	Profile string            `yaml:"profile"`
-	Config  map[string]string `yaml:"config,omitempty"`
+	Env     map[string]string `yaml:"env,omitempty"`
 }
 
 type AgentConfig struct {
@@ -89,20 +89,14 @@ func (c *AgentConfig) BuildEnvMap() map[string]string {
 			env[k] = val
 		}
 	}
-	return env
-}
-
-func (p *ProviderRef) ConfigList() []string {
-	if len(p.Config) == 0 {
-		return nil
-	}
-	configs := make([]string, 0, len(p.Config))
-	for k, v := range p.Config {
-		if val := expandEnvVar(k, v); val != "" {
-			configs = append(configs, k+"="+val)
+	for _, p := range c.Providers {
+		for k, v := range p.Env {
+			if val := expandEnvVar(k, v); val != "" {
+				env[k] = val
+			}
 		}
 	}
-	return configs
+	return env
 }
 
 func (c *AgentConfig) BuildEnvSh() string {

@@ -55,7 +55,7 @@ providers:
   - profile: github
   - profile: vertex-local
   - profile: atlassian
-    config:
+    env:
       JIRA_URL: ${JIRA_URL}
       JIRA_USERNAME: ${JIRA_USERNAME}
   - profile: gws
@@ -133,7 +133,7 @@ providers:
   - profile: github
   - profile: vertex-local
   - profile: atlassian
-    config:
+    env:
       JIRA_URL: ${JIRA_URL}
       JIRA_USERNAME: ${JIRA_USERNAME}
   - profile: gws

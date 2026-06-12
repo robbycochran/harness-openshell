@@ -115,7 +115,7 @@ func TestRegisterProviders_PassesConfigToProvider(t *testing.T) {
 	gw := &mockGW{providers: map[string]bool{}}
 
 	err := registerProviders(dir, gw, false, []agent.ProviderRef{
-		{Profile: "atlassian", Config: map[string]string{
+		{Profile: "atlassian", Env: map[string]string{
 			"JIRA_URL":      "${JIRA_URL}",
 			"JIRA_USERNAME": "${JIRA_USERNAME}",
 		}},

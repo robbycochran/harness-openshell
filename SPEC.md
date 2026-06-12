@@ -26,7 +26,7 @@ providers:
   - profile: github
   - profile: vertex-local
   - profile: atlassian
-    config:
+    env:
       JIRA_URL: ${JIRA_URL}
       JIRA_USERNAME: ${JIRA_USERNAME}
   - profile: gws
@@ -43,7 +43,7 @@ Fields:
 - `task` -- path to a task.md file, passed to entrypoint via `-p "$(cat task.md)"`
 - `providers` -- list of provider profile references
 - `providers[].profile` -- OpenShell provider profile name
-- `providers[].config` -- non-secret config vars (resolved via `os.ExpandEnv`; empty values read from host env)
+- `providers[].env` -- non-secret env vars for this provider (resolved via `os.ExpandEnv`; empty values read from host env; injected via `--env` on sandbox create)
 - `env` -- additional environment variables injected via `--env` on sandbox create (empty values read from host env)
 - `include` -- extra files to include in the payload
 - `policy` -- path to a network policy YAML
