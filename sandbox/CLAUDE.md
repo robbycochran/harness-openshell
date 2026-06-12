@@ -1,6 +1,6 @@
 # Sandbox Agent Instructions
 
-You are running inside an OpenShell sandbox on an OpenShift cluster. Credentials are injected via the OpenShell provider system — they appear as environment variables automatically.
+You are running inside an OpenShell sandbox. Credentials are injected via the OpenShell provider system — they appear as environment variables automatically.
 
 ## Tools Available
 
@@ -21,19 +21,18 @@ You are running inside an OpenShell sandbox on an OpenShift cluster. Credentials
   - `gws drive files list --params '{"pageSize": 10}'`
 - Use `gws schema <service.resource.method>` to discover API parameters.
 
-### Kubernetes — `kubectl`
-- A deploy kubeconfig may be available at `/tmp/deploy-kubeconfig` for deploying to test namespaces.
-- Do NOT modify the `openshell` or `agent-sandbox-system` namespaces.
+### AI Coding Agents
+- `claude` — Claude Code (wrapper at `/usr/local/bin/claude`)
+- `opencode` — OpenCode (MCP config at `/sandbox/opencode.json`)
 
 ### General Tools
-- `python3`, `pip`, `uv` — Python 3.14 with a virtualenv at `/sandbox/.venv`
+- `python3`, `pip`, `uv` — Python with a virtualenv at `/sandbox/.venv`
 - `node`, `npm` — Node.js 22
 - `git`, `curl` — pre-installed
-- `cargo` — NOT available (no Rust toolchain in sandbox)
 
 ## Configuration
-- Running via **Vertex AI** through `inference.local` gateway routing.
-- Model selection is configured at the gateway level via `openshell inference set`.
+- Inference routes through the gateway proxy at `inference.local`.
+- Model and provider configuration are set by the harness during sandbox creation.
 
 ## Conventions
 - Working directory: `/sandbox`

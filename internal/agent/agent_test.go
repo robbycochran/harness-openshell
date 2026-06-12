@@ -12,7 +12,7 @@ func TestParse_Valid(t *testing.T) {
 name: daily-standup
 providers:
   - profile: atlassian
-    config:
+    env:
       JIRA_USERNAME: alice@example.com
       JIRA_URL: https://issues.redhat.com
   - profile: github
@@ -32,8 +32,8 @@ entrypoint: claude --bare
 	if cfg.Providers[0].Profile != "atlassian" {
 		t.Errorf("Providers[0].Profile = %q, want atlassian", cfg.Providers[0].Profile)
 	}
-	if cfg.Providers[0].Config["JIRA_USERNAME"] != "alice@example.com" {
-		t.Errorf("JIRA_USERNAME = %q", cfg.Providers[0].Config["JIRA_USERNAME"])
+	if cfg.Providers[0].Env["JIRA_USERNAME"] != "alice@example.com" {
+		t.Errorf("JIRA_USERNAME = %q", cfg.Providers[0].Env["JIRA_USERNAME"])
 	}
 	if cfg.Task != "tasks/daily-standup.md" {
 		t.Errorf("Task = %q", cfg.Task)
@@ -55,7 +55,7 @@ func TestParse_MissingProviderProfile(t *testing.T) {
 	data := []byte(`
 name: test
 providers:
-  - config:
+  - env:
       FOO: bar
 `)
 	_, err := Parse(data)
@@ -143,19 +143,14 @@ func TestNoTTY(t *testing.T) {
 
 func TestBuildEnvSh(t *testing.T) {
 	cfg := &AgentConfig{
-		Providers: []ProviderRef{
-			{Profile: "atlassian", Config: map[string]string{
-				"JIRA_URL":      "https://issues.redhat.com",
-				"JIRA_USERNAME": "alice",
-			}},
+		Env: map[string]string{
+			"ANTHROPIC_BASE_URL": "https://inference.local",
+			"ANTHROPIC_API_KEY":  "sk-proxy",
 		},
 	}
 	env := cfg.BuildEnvSh()
-	if !strings.Contains(env, `export JIRA_URL="https://issues.redhat.com"`) {
-		t.Errorf("missing JIRA_URL in:\n%s", env)
-	}
-	if !strings.Contains(env, `export JIRA_USERNAME="alice"`) {
-		t.Errorf("missing JIRA_USERNAME in:\n%s", env)
+	if !strings.Contains(env, `export ANTHROPIC_BASE_URL="https://inference.local"`) {
+		t.Errorf("missing ANTHROPIC_BASE_URL in:\n%s", env)
 	}
 }
 
@@ -166,33 +161,55 @@ func TestBuildEnvSh_Empty(t *testing.T) {
 	}
 }
 
-func TestBuildEnvSh_TopLevelEnv(t *testing.T) {
+func TestBuildEnvSh_IncludesProviderEnv(t *testing.T) {
 	cfg := &AgentConfig{
 		Env: map[string]string{
 			"ANTHROPIC_BASE_URL": "https://inference.local",
-			"ANTHROPIC_API_KEY":  "sk-proxy",
 		},
 		Providers: []ProviderRef{
-			{Profile: "atlassian", Config: map[string]string{"JIRA_URL": "https://jira.example.com"}},
+			{Profile: "atlassian", Env: map[string]string{"JIRA_URL": "https://jira.example.com"}},
 		},
 	}
 	env := cfg.BuildEnvSh()
-	if !strings.Contains(env, `export ANTHROPIC_BASE_URL="https://inference.local"`) {
+	if !strings.Contains(env, `ANTHROPIC_BASE_URL`) {
 		t.Errorf("missing top-level env var in:\n%s", env)
 	}
-	if !strings.Contains(env, `export JIRA_URL="https://jira.example.com"`) {
-		t.Errorf("missing provider config var in:\n%s", env)
+	if !strings.Contains(env, `JIRA_URL`) {
+		t.Errorf("missing provider env var in:\n%s", env)
 	}
 }
 
-func TestBuildEnvSh_ProviderOverridesTopLevel(t *testing.T) {
+func TestBuildEnvMap_IncludesProviderEnv(t *testing.T) {
+	t.Setenv("JIRA_URL", "https://test.atlassian.net")
 	cfg := &AgentConfig{
-		Env:       map[string]string{"FOO": "from-top"},
-		Providers: []ProviderRef{{Profile: "test", Config: map[string]string{"FOO": "from-provider"}}},
+		Env: map[string]string{"TOP": "top-val"},
+		Providers: []ProviderRef{
+			{Profile: "atlassian", Env: map[string]string{
+				"JIRA_URL":      "${JIRA_URL}",
+				"JIRA_USERNAME": "alice",
+			}},
+		},
 	}
-	env := cfg.BuildEnvSh()
-	if !strings.Contains(env, `"from-provider"`) {
-		t.Errorf("provider config should override top-level env:\n%s", env)
+	env := cfg.BuildEnvMap()
+	if env["TOP"] != "top-val" {
+		t.Errorf("TOP = %q", env["TOP"])
+	}
+	if env["JIRA_URL"] != "https://test.atlassian.net" {
+		t.Errorf("JIRA_URL = %q, want expanded value", env["JIRA_URL"])
+	}
+	if env["JIRA_USERNAME"] != "alice" {
+		t.Errorf("JIRA_USERNAME = %q", env["JIRA_USERNAME"])
+	}
+}
+
+func TestBuildEnvMap_ProviderEnvOverridesTopLevel(t *testing.T) {
+	cfg := &AgentConfig{
+		Env:       map[string]string{"SHARED": "from-top"},
+		Providers: []ProviderRef{{Profile: "test", Env: map[string]string{"SHARED": "from-provider"}}},
+	}
+	env := cfg.BuildEnvMap()
+	if env["SHARED"] != "from-provider" {
+		t.Errorf("SHARED = %q, want from-provider (provider env should override top-level)", env["SHARED"])
 	}
 }
 
@@ -205,7 +222,7 @@ tty: true
 providers:
   - profile: github
   - profile: atlassian
-    config:
+    env:
       JIRA_URL: https://jira.example.com
 env:
   ANTHROPIC_BASE_URL: https://inference.local
@@ -234,12 +251,11 @@ func TestBuildEnvMap(t *testing.T) {
 	cfg := &AgentConfig{
 		Env: map[string]string{
 			"TOP_VAR": "top-val",
-			"SHARED":  "from-top",
+			"ANOTHER": "another-val",
 		},
 		Providers: []ProviderRef{
-			{Profile: "atlassian", Config: map[string]string{
+			{Profile: "atlassian", Env: map[string]string{
 				"JIRA_URL": "https://issues.redhat.com",
-				"SHARED":   "from-provider",
 			}},
 		},
 	}
@@ -247,11 +263,11 @@ func TestBuildEnvMap(t *testing.T) {
 	if env["TOP_VAR"] != "top-val" {
 		t.Errorf("TOP_VAR = %q, want top-val", env["TOP_VAR"])
 	}
-	if env["JIRA_URL"] != "https://issues.redhat.com" {
-		t.Errorf("JIRA_URL = %q", env["JIRA_URL"])
+	if env["ANOTHER"] != "another-val" {
+		t.Errorf("ANOTHER = %q", env["ANOTHER"])
 	}
-	if env["SHARED"] != "from-provider" {
-		t.Errorf("SHARED = %q, want from-provider (provider should override top-level)", env["SHARED"])
+	if env["JIRA_URL"] != "https://issues.redhat.com" {
+		t.Errorf("JIRA_URL = %q, want provider env included", env["JIRA_URL"])
 	}
 }
 
@@ -290,9 +306,7 @@ func TestBuildEnvMap_Empty(t *testing.T) {
 
 func TestBuildEnvSh_Sorted(t *testing.T) {
 	cfg := &AgentConfig{
-		Providers: []ProviderRef{
-			{Profile: "test", Config: map[string]string{"Z_VAR": "z", "A_VAR": "a"}},
-		},
+		Env: map[string]string{"Z_VAR": "z", "A_VAR": "a"},
 	}
 	env := cfg.BuildEnvSh()
 	aIdx := strings.Index(env, "A_VAR")
@@ -343,7 +357,7 @@ func TestRenderPayload(t *testing.T) {
 	cfg := &AgentConfig{
 		Name: "test-agent",
 		Providers: []ProviderRef{
-			{Profile: "atlassian", Config: map[string]string{"JIRA_URL": "https://jira.example.com"}},
+			{Profile: "atlassian", Env: map[string]string{"JIRA_URL": "https://jira.example.com"}},
 		},
 		Task:       "my-task.md",
 		Entrypoint: "claude --bare",

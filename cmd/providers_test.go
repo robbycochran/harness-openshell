@@ -1,13 +1,12 @@
 package cmd
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/robbycochran/harness-openshell/internal/gateway"
+	"github.com/robbycochran/harness-openshell/internal/agent"
 )
 
 func setupProvidersTest(t *testing.T) string {
@@ -20,13 +19,12 @@ func setupProvidersTest(t *testing.T) string {
 func TestRegisterProviders_GitHubWhenTokenSet(t *testing.T) {
 	dir := setupProvidersTest(t)
 	t.Setenv("GITHUB_TOKEN", "ghp_test123")
-	t.Setenv("JIRA_API_TOKEN", "")
 
-	gw := &mockGW{
-		providers: map[string]bool{},
-	}
+	gw := &mockGW{providers: map[string]bool{}}
 
-	err := registerProviders(dir, gw, false, nil, true)
+	err := registerProviders(dir, gw, false, []agent.ProviderRef{
+		{Profile: "github"},
+	})
 	if err != nil {
 		t.Fatalf("registerProviders: %v", err)
 	}
@@ -35,13 +33,12 @@ func TestRegisterProviders_GitHubWhenTokenSet(t *testing.T) {
 func TestRegisterProviders_SkipsWhenTokenMissing(t *testing.T) {
 	dir := setupProvidersTest(t)
 	t.Setenv("GITHUB_TOKEN", "")
-	t.Setenv("JIRA_API_TOKEN", "")
 
-	gw := &mockGW{
-		providers: map[string]bool{},
-	}
+	gw := &mockGW{providers: map[string]bool{}}
 
-	err := registerProviders(dir, gw, false, nil, true)
+	err := registerProviders(dir, gw, false, []agent.ProviderRef{
+		{Profile: "github"},
+	})
 	if err != nil {
 		t.Fatalf("registerProviders: %v", err)
 	}
@@ -50,13 +47,12 @@ func TestRegisterProviders_SkipsWhenTokenMissing(t *testing.T) {
 func TestRegisterProviders_SkipsExistingProvider(t *testing.T) {
 	dir := setupProvidersTest(t)
 	t.Setenv("GITHUB_TOKEN", "ghp_test123")
-	t.Setenv("JIRA_API_TOKEN", "")
 
-	gw := &mockGW{
-		providers: map[string]bool{"github": true},
-	}
+	gw := &mockGW{providers: map[string]bool{"github": true}}
 
-	err := registerProviders(dir, gw, false, nil, true)
+	err := registerProviders(dir, gw, false, []agent.ProviderRef{
+		{Profile: "github"},
+	})
 	if err != nil {
 		t.Fatalf("registerProviders: %v", err)
 	}
@@ -66,68 +62,76 @@ func TestRegisterProviders_ForceWithRunningSandboxes(t *testing.T) {
 	dir := setupProvidersTest(t)
 
 	gw := &mockGWWithSandboxes{
-		mockGW: &mockGW{
-			providers: map[string]bool{"github": true},
-		},
+		mockGW:    &mockGW{providers: map[string]bool{"github": true}},
 		sandboxes: []string{"test-sandbox"},
 	}
 
-	err := registerProviders(dir, gw, true, nil, true)
+	err := registerProviders(dir, gw, true, []agent.ProviderRef{
+		{Profile: "github"},
+	})
 	if err == nil {
 		t.Fatal("expected error with --force and running sandboxes")
 	}
-	if !strings.Contains(err.Error(), "cannot --force") {
-		t.Errorf("error = %q, want 'cannot --force'", err)
+	if !strings.Contains(err.Error(), "cannot --provider-refresh") {
+		t.Errorf("error = %q, want 'cannot --provider-refresh'", err)
 	}
 }
 
 func TestRegisterProviders_ForceDeletesAndRecreates(t *testing.T) {
 	dir := setupProvidersTest(t)
 	t.Setenv("GITHUB_TOKEN", "ghp_test123")
-	t.Setenv("JIRA_API_TOKEN", "")
 
-	gw := &mockGW{
-		providers: map[string]bool{},
-	}
+	gw := &mockGW{providers: map[string]bool{}}
 
-	err := registerProviders(dir, gw, true, nil, true)
+	err := registerProviders(dir, gw, true, []agent.ProviderRef{
+		{Profile: "github"},
+	})
 	if err != nil {
 		t.Fatalf("registerProviders: %v", err)
 	}
 }
 
-func TestRegisterProviders_RespectsGatewayConfig(t *testing.T) {
+func TestRegisterProviders_OnlyRegistersRequestedProviders(t *testing.T) {
 	dir := setupProvidersTest(t)
 	t.Setenv("GITHUB_TOKEN", "ghp_test123")
-	t.Setenv("JIRA_API_TOKEN", "token")
+	t.Setenv("JIRA_API_TOKEN", "jira_test")
 
-	gw := &mockGW{
-		providers: map[string]bool{},
-	}
+	gw := &mockGW{providers: map[string]bool{}}
 
-	gwCfg := &gateway.GatewayConfig{}
-	gwCfg.Providers.Enabled = []string{"github"}
-
-	err := registerProviders(dir, gw, false, gwCfg, true)
+	err := registerProviders(dir, gw, false, []agent.ProviderRef{
+		{Profile: "github"},
+	})
 	if err != nil {
 		t.Fatalf("registerProviders: %v", err)
 	}
 }
 
-func TestRegisterProviders_ListError(t *testing.T) {
+func TestRegisterProviders_PassesConfigToProvider(t *testing.T) {
 	dir := setupProvidersTest(t)
+	t.Setenv("JIRA_API_TOKEN", "jira_test")
+	t.Setenv("JIRA_URL", "https://test.atlassian.net")
+	t.Setenv("JIRA_USERNAME", "test@example.com")
 
-	gw := &mockGW{
-		providers:   map[string]bool{},
-		providerErr: fmt.Errorf("gateway unreachable"),
-	}
+	gw := &mockGW{providers: map[string]bool{}}
 
-	err := registerProviders(dir, gw, false, nil, true)
-	if err == nil {
-		t.Fatal("expected error when provider list fails")
+	err := registerProviders(dir, gw, false, []agent.ProviderRef{
+		{Profile: "atlassian", Env: map[string]string{
+			"JIRA_URL":      "${JIRA_URL}",
+			"JIRA_USERNAME": "${JIRA_USERNAME}",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("registerProviders: %v", err)
 	}
-	if !strings.Contains(err.Error(), "listing providers") {
-		t.Errorf("error = %q, want 'listing providers'", err)
+}
+
+func TestRegisterProviders_EmptyList(t *testing.T) {
+	dir := setupProvidersTest(t)
+	gw := &mockGW{providers: map[string]bool{}}
+
+	err := registerProviders(dir, gw, false, nil)
+	if err != nil {
+		t.Fatalf("registerProviders: %v", err)
 	}
 }
 

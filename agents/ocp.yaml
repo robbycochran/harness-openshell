@@ -1,18 +1,21 @@
-# Hackathon demo agent -- runs the cross-tool status snapshot task.
+# OCP agent — deploys to an OpenShift cluster.
 #
 # Usage:
-#   harness up --local --agent demo
+#   harness up -f agents/ocp.yaml
+#
+# The gateway field tells harness to deploy to OCP instead of local Podman.
+# Requires: KUBECONFIG, kubectl, helm, cluster access.
 
-name: demo
+name: agent
+gateway: ocp
 entrypoint: claude
-task: demo/DEMO-TASK.md
-tty: false
+tty: true
 
 providers:
   - profile: github
   - profile: vertex-local
   - profile: atlassian
-    config:
+    env:
       JIRA_URL: ${JIRA_URL}
       JIRA_USERNAME: ${JIRA_USERNAME}
   - profile: gws

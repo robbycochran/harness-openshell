@@ -12,11 +12,12 @@ import (
 
 type ProviderRef struct {
 	Profile string            `yaml:"profile"`
-	Config  map[string]string `yaml:"config,omitempty"`
+	Env     map[string]string `yaml:"env,omitempty"`
 }
 
 type AgentConfig struct {
 	Name       string            `yaml:"name"`
+	Gateway    string            `yaml:"gateway,omitempty"`
 	Providers  []ProviderRef     `yaml:"providers"`
 	Env        map[string]string `yaml:"env,omitempty"`
 	Task       string            `yaml:"task,omitempty"`
@@ -89,7 +90,7 @@ func (c *AgentConfig) BuildEnvMap() map[string]string {
 		}
 	}
 	for _, p := range c.Providers {
-		for k, v := range p.Config {
+		for k, v := range p.Env {
 			if val := expandEnvVar(k, v); val != "" {
 				env[k] = val
 			}

@@ -5,7 +5,7 @@ Automates gateway deployment, provider registration, and sandbox creation across
 
 ## Quick Start
 
-**Prerequisites:** [OpenShell](https://github.com/NVIDIA/OpenShell) installed and running, Podman.
+**Prerequisites:** [OpenShell v0.0.59+](https://github.com/NVIDIA/OpenShell) installed and running, Podman.
 
 ```bash
 # macOS
@@ -33,16 +33,21 @@ To customize providers or add GWS, create an `agents/default.yaml` in your proje
 
 [OpenShell](https://github.com/NVIDIA/OpenShell) provides the runtime: gateway, sandboxes, L7 network policy, and credential proxy. It handles sandbox lifecycle and credential injection once providers are registered, but leaves gateway deployment orchestration, credential validation, and multi-target configuration to the user.
 
-This harness fills a different gap: multi-provider credential management (preflight validation, registration, health checks) across deployment targets (local Podman, kind, OpenShift) with declarative agent configs. It is model-agnostic -- the agent config chooses the entrypoint and inference backend. The harness orchestrates the infrastructure around it.
+This harness fills a different gap: multi-provider credential management (inline validation, registration, health checks) across deployment targets (local Podman, kind, OpenShift) with declarative agent configs. It is model-agnostic -- the agent config chooses the entrypoint and inference backend. The harness orchestrates the infrastructure around it.
 
-## Agent Configs
+## What `harness up` Replaces
 
-An agent config declares the sandbox image, entrypoint, and which providers to attach:
+One command:
+
+```bash
+harness up
+```
+
+reads `agents/default.yaml`:
 
 ```yaml
 # agents/default.yaml
 name: agent
-image: ghcr.io/robbycochran/harness-openshell:sandbox
 entrypoint: claude
 tty: true
 
@@ -50,7 +55,7 @@ providers:
   - profile: github
   - profile: vertex-local
   - profile: atlassian
-    config:
+    env:
       JIRA_URL: ${JIRA_URL}
       JIRA_USERNAME: ${JIRA_USERNAME}
   - profile: gws
@@ -60,43 +65,173 @@ env:
   ANTHROPIC_API_KEY: sk-ant-openshell-proxy-managed
 ```
 
+and replaces this sequence of `openshell` commands (captured from `harness up --show-commands`):
+
 ```bash
-harness up
+# 1. Enable providers v2
+openshell settings set --global --key providers_v2_enabled --value true --yes
+
+# 2. Import custom provider profiles (atlassian, gws)
+openshell provider profile import --from agents/providers/profiles/
+
+# 3. Register GitHub (discovers GITHUB_TOKEN from environment)
+openshell provider create --name github --type github --from-existing
+
+# 4. Register Vertex AI (reads ADC, configures inference routing)
+openshell provider create --name vertex-local --type google-vertex-ai \
+  --from-gcloud-adc \
+  --config VERTEX_AI_PROJECT_ID=my-project \
+  --config VERTEX_AI_REGION=global
+openshell inference set --provider vertex-local --model claude-sonnet-4-6 --no-verify
+
+# 5. Register Atlassian (discovers JIRA_API_TOKEN from environment)
+openshell provider create --name atlassian --type atlassian --from-existing
+
+# 6. Register GWS (export OAuth creds, create provider, configure refresh)
+gws auth export --unmasked
+openshell provider create --name gws --type google-workspace \
+  --credential GOOGLE_WORKSPACE_CLI_TOKEN=pending
+openshell provider refresh configure gws \
+  --credential-key GOOGLE_WORKSPACE_CLI_TOKEN \
+  --strategy oauth2-refresh-token \
+  --material client_id=... --material client_secret=... \
+  --material refresh_token=... --material scopes=... \
+  --secret-material-key client_secret --secret-material-key refresh_token
+openshell provider refresh rotate gws \
+  --credential-key GOOGLE_WORKSPACE_CLI_TOKEN
+
+# 7. Create sandbox with all providers and env vars
+openshell sandbox create --name agent \
+  --from ghcr.io/robbycochran/harness-openshell:sandbox \
+  --provider github --provider vertex-local --provider atlassian --provider gws \
+  --env ANTHROPIC_API_KEY=sk-ant-openshell-proxy-managed \
+  --env ANTHROPIC_BASE_URL=https://inference.local \
+  --env CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1 \
+  --env JIRA_URL=https://your-org.atlassian.net \
+  --env JIRA_USERNAME=you@company.com \
+  --upload payload:/sandbox/.config --no-git-ignore \
+  --tty -- bash /sandbox/.config/openshell/run.sh
 ```
 
-Credentials are proxy-managed. The sandbox holds placeholder tokens; real secrets are substituted by the gateway at the network boundary.
+The harness also handles: local gateway deployment, version checking (openshell >= v0.0.59), payload rendering, retry logic, and graceful skipping of providers whose credentials are not available.
+
+Credentials are proxy-managed -- the sandbox holds placeholder tokens; real secrets are substituted by the gateway at the network boundary.
+
+### OCP Deployment
+
+The `gateway:` field tells the harness which deployment target to use:
+
+```yaml
+# agents/ocp.yaml
+name: agent
+gateway: ocp
+entrypoint: claude
+tty: true
+
+providers:
+  - profile: github
+  - profile: vertex-local
+  - profile: atlassian
+    env:
+      JIRA_URL: ${JIRA_URL}
+      JIRA_USERNAME: ${JIRA_USERNAME}
+  - profile: gws
+
+env:
+  ANTHROPIC_BASE_URL: https://inference.local
+  ANTHROPIC_API_KEY: sk-ant-openshell-proxy-managed
+  CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1"
+```
+
+```bash
+harness up -f agents/ocp.yaml    # deploys to OCP (reads gateways/ocp/gateway.yaml)
+harness up                        # defaults to local Podman
+```
+
+`--local` and `--remote` flags override the `gateway:` field.
+
+For OCP, the harness first deploys the gateway via Helm, then runs the same provider registration and sandbox creation. The full sequence:
+
+```bash
+# 1. Deploy gateway to OCP
+kubectl create ns openshell
+kubectl label ns openshell pod-security.kubernetes.io/enforce=privileged
+kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/.../manifest.yaml
+oc adm policy add-scc-to-user privileged -z openshell -n openshell
+oc adm policy add-scc-to-user anyuid -z openshell -n openshell
+helm upgrade --install openshell oci://ghcr.io/nvidia/openshell/helm-chart \
+  --version 0.0.59 -n openshell -f gateways/ocp/helm/values.yaml
+kubectl rollout status statefulset/openshell -n openshell --timeout=300s
+
+# 2. Register gateway with CLI (mTLS certs extracted from K8s secrets)
+openshell gateway add https://openshell-route.apps.cluster.example.com:443 \
+  --name openshell-remote-ocp --local
+openshell gateway select openshell-remote-ocp
+
+# 3-9. Same as local: settings, profiles, providers, inference, sandbox create
+openshell settings set --global --key providers_v2_enabled --value true
+openshell provider profile import --from agents/providers/profiles/
+openshell provider create --name github --type github --from-existing
+openshell provider create --name vertex-local --type google-vertex-ai \
+  --from-gcloud-adc --config VERTEX_AI_PROJECT_ID=... --config VERTEX_AI_REGION=global
+openshell provider create --name atlassian --type atlassian --from-existing
+# ... GWS multi-step registration (same as local)
+openshell inference set --provider vertex-local --model claude-sonnet-4-6 --no-verify
+openshell sandbox create --name agent \
+  --from ghcr.io/robbycochran/harness-openshell:sandbox \
+  --provider github --provider vertex-local --provider atlassian --provider gws \
+  --env ANTHROPIC_BASE_URL=https://inference.local \
+  --env ANTHROPIC_API_KEY=sk-ant-openshell-proxy-managed \
+  --env CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1 \
+  --upload payload:/sandbox/.config --no-git-ignore \
+  --tty \
+  -- bash /sandbox/.config/openshell/run.sh
+```
+
+### Task Agents
 
 For non-interactive task agents, set `task:` and `tty: false`:
 
 ```yaml
-# agents/demo.yaml
-name: demo
-entrypoint: claude -p
-task: demo/DEMO-TASK.md
+name: standup
+entrypoint: claude
+task: tasks/daily-standup.md
 tty: false
 # ... same providers and env
 ```
+
+When `task:` is set, the harness passes its content to the entrypoint via `-p`.
+
+### OpenCode
+
+[OpenCode](https://github.com/opencode-ai/opencode) is supported as an alternative entrypoint:
+
+```bash
+harness up --agent opencode
+```
+
+Same providers and gateway -- just a different agent binary. See `agents/opencode.yaml`.
 
 ## Local Setup
 
 ### Prerequisites
 
-- [OpenShell CLI](https://github.com/NVIDIA/OpenShell) (`brew tap nvidia/openshell && brew install openshell && brew services start openshell` on macOS)
+- [OpenShell CLI v0.0.59+](https://github.com/NVIDIA/OpenShell) (`brew tap nvidia/openshell && brew install openshell && brew services start openshell` on macOS)
 - Podman/Docker
 - Go 1.23+ (only needed for building from source)
 
 ### Credentials
 
-Each provider requires credentials on the host. The harness validates these before registration. Providers with missing credentials are skipped with an info message.
+Each provider requires credentials on the host. The harness validates these inline during registration. Providers with missing credentials are skipped with an info message.
 
 | Provider | Required |
 |----------|----------|
 | `github` | `GITHUB_TOKEN` env var |
 | `vertex-local` | `gcloud auth application-default login --project <id>` + `ANTHROPIC_VERTEX_PROJECT_ID` + `CLOUD_ML_REGION` env vars |
 | `atlassian` | `JIRA_API_TOKEN` + `JIRA_URL` + `JIRA_USERNAME` env vars |
-| `gws` | OAuth client secret at `~/.config/gws/client_secret.json` |
+| `gws` | `gws auth login` (OAuth via [gws CLI](https://github.com/googleworkspace/cli)) |
 
-See `providers.toml` for the full input schema and health checks per provider.
+Provider profiles are defined in `agents/providers/profiles/` and validated inline during registration.
 
 ### Build from Source
 
@@ -112,17 +247,17 @@ For remote OpenShift: `./harness up --remote` (requires `kubectl`, `helm`, clust
 The harness orchestrates three OpenShell components via the `openshell` CLI:
 
 - **Gateway** -- OpenShell's credential proxy and L7 network policy engine. Runs as a Podman container (local) or Kubernetes StatefulSet (remote). Manages provider credentials, inference routing, and sandbox lifecycle.
-- **Providers** -- Credential registrations on the gateway. Each provider's required inputs (env vars, files, connectivity checks) are declared in `providers.toml`. The harness runs preflight validation before registering.
-- **Sandbox** -- Container running the agent entrypoint, configured by `agents/*.yaml`. The gateway injects credentials at the network boundary -- the sandbox process sees proxy-managed placeholder tokens. Network egress is deny-by-default at L7.
+- **Providers** -- Credential registrations on the gateway. Provider profiles are declared in `agents/providers/profiles/`. The harness validates credentials inline during registration -- providers with missing credentials are skipped.
+- **Sandbox** -- Container running the agent entrypoint (Claude Code or OpenCode), configured by `agents/*.yaml`. The gateway injects credentials at the network boundary -- the sandbox process sees proxy-managed placeholder tokens. Network egress is deny-by-default at L7.
 
 ```
-harness CLI ──→ openshell CLI ──→ Gateway (Podman or K8s)
-                                    ├── Provider credentials
-                                    ├── L7 network policy
-                                    ├── inference.local proxy
+harness CLI ──> openshell CLI ──> Gateway (Podman or K8s)
+                                    |── Provider credentials
+                                    |── L7 network policy
+                                    |── inference.local proxy
                                     └── Sandbox container
-                                         ├── claude
-                                         ├── gh, mcp-atlassian, gws
+                                         |── claude / opencode
+                                         |── gh, mcp-atlassian, gws
                                          └── placeholder tokens
 ```
 
@@ -134,23 +269,24 @@ See the [OpenShell docs](https://github.com/NVIDIA/OpenShell) for the full secur
 |------|---------|
 | `agents/*.yaml` | Agent config: image, entrypoint, providers, env, optional task file |
 | `agents/providers/profiles/` | OpenShell provider profiles (imported to gateway on registration) |
-| `providers.toml` | Provider catalog: required inputs and health checks per provider |
-| `gateways/*/gateway.toml` | Deployment target config: `local/` (Podman), `kind/`, `ocp/` (OpenShift) |
-| `openshell.toml` | Deployment-level overrides (enabled providers, inference model, chart version) |
+| `gateways/*/gateway.yaml` | Deployment target config: `local/` (Podman), `kind/`, `ocp/` (OpenShift) |
 | `sandbox/Dockerfile` | Sandbox image: OpenShell base + MCP servers + CLI tools |
 | `sandbox/policy.yaml` | Network egress rules applied to sandboxes |
+| `sandbox/opencode.json` | MCP server config for OpenCode agent |
 
 ## Commands
 
 ```
-harness up [--remote] [--agent NAME] [-f FILE] [--name SANDBOX]
+harness up [--remote] [--agent NAME] [-f FILE] [--name SANDBOX] [--provider-refresh]
     Deploy gateway + register providers + create sandbox.
     Defaults to local gateway (use --remote for OCP).
     --agent defaults to "default" (embedded or agents/default.yaml).
     -f renders any agent YAML file directly.
+    --provider-refresh deletes and recreates all providers.
 
 harness create [--agent NAME] [-f FILE] [--name SANDBOX]
-    Create a sandbox without deploying the gateway. Assumes gateway is running.
+    Create a sandbox without deploying the gateway.
+    Assumes gateway is running. Auto-registers missing providers.
 
 harness connect [NAME]
     Reconnect to a running sandbox.
@@ -158,14 +294,8 @@ harness connect [NAME]
 harness deploy [local|ocp|kind]
     Deploy or verify the gateway for a target.
 
-harness providers [--force]
-    Register providers with the gateway. --force re-registers all.
-
-harness preflight [--strict]
-    Validate local credentials and prerequisites.
-
 harness status
-    Show gateway, provider, and sandbox status.
+    Show sandbox status.
 
 harness logs [NAME] [-f]
     Stream sandbox logs (-f to follow).
@@ -181,9 +311,9 @@ harness teardown [--sandboxes] [--providers] [--k8s]
 
 | Document | What it is |
 |----------|------------|
-| [SPEC.md](SPEC.md) | **Authoritative** behavior spec for the CLI — commands, configs, payload |
+| [SPEC.md](SPEC.md) | **Authoritative** behavior spec for the CLI -- commands, configs, payload |
 | [AGENTS.md](AGENTS.md) | Contributor guide: coding principles, workaround tracking, validation modes |
 | [TODO.md](TODO.md) | Roadmap and known gaps |
-| [docs/archive/](docs/archive/README.md) | Historical design docs (e.g. the June 2026 design-v1 proposal) — outdated, kept for context |
+| [docs/archive/](docs/archive/README.md) | Historical design docs (e.g. the June 2026 design-v1 proposal) -- outdated, kept for context |
 | [docs/release-plan.md](docs/release-plan.md) | Release phases: CI (done), embed + `harness init`, GoReleaser |
 | [docs/proto-migration.md](docs/proto-migration.md) | Deferred plan to adopt proto-generated config types |

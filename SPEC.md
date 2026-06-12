@@ -9,7 +9,9 @@ The harness deploys and manages AI agent sandboxes on three targets:
 - **Kind** -- Kubernetes pods via a kind cluster
 - **Remote** -- Kubernetes pods via an OpenShift-hosted OpenShell gateway
 
-Each sandbox is an isolated container running an agent entrypoint, with credential providers, network policies, and a rendered payload (env.sh, run.sh, task.md).
+Each sandbox is an isolated container running an agent entrypoint (Claude Code or OpenCode), with credential providers, network policies, and a rendered payload (run.sh, task.md).
+
+Requires OpenShell v0.0.59+.
 
 ## Agent Config
 
@@ -17,14 +19,14 @@ Agent configs live in `agents/*.yaml`. Each declares the sandbox image, entrypoi
 
 ```yaml
 name: agent
-entrypoint: claude
+entrypoint: claude      # or: opencode
 tty: true
 
 providers:
   - profile: github
   - profile: vertex-local
   - profile: atlassian
-    config:
+    env:
       JIRA_URL: ${JIRA_URL}
       JIRA_USERNAME: ${JIRA_USERNAME}
   - profile: gws
@@ -36,13 +38,13 @@ env:
 Fields:
 - `name` (required) -- sandbox name, used for `openshell sandbox connect`
 - `image` -- container image for the sandbox (default: version-matched from ghcr.io, override with `SANDBOX_IMAGE` env)
-- `entrypoint` -- command to run (default: `claude`)
+- `entrypoint` -- command to run (default: `claude`). Supports `claude`, `opencode`, `bash`, or any binary on PATH.
 - `tty` -- enable TTY (default: false)
-- `task` -- path to a task.md file, passed as argument to entrypoint
+- `task` -- path to a task.md file, passed to entrypoint via `-p "$(cat task.md)"`
 - `providers` -- list of provider profile references
 - `providers[].profile` -- OpenShell provider profile name
-- `providers[].config` -- non-secret config vars (resolved via `os.ExpandEnv`)
-- `env` -- additional environment variables
+- `providers[].env` -- non-secret env vars for this provider (resolved via `os.ExpandEnv`; empty values read from host env; injected via `--env` on sandbox create)
+- `env` -- additional environment variables injected via `--env` on sandbox create (empty values read from host env)
 - `include` -- extra files to include in the payload
 - `policy` -- path to a network policy YAML
 
@@ -50,21 +52,25 @@ Provider profiles live in `agents/providers/profiles/`. These are imported to th
 
 ## CLI
 
-### `harness up [--local|--remote] [--agent NAME] [-f FILE] [--name SANDBOX] [--no-tty]`
+### `harness up [--local|--remote] [--agent NAME] [-f FILE] [--name SANDBOX] [--no-tty] [--provider-refresh]`
 
 Full flow: deploy gateway, register providers, render agent config, create sandbox.
 
-1. **Ensure gateway** -- deploy if needed (local: Podman, remote: Helm to K8s/OCP).
-2. **Parse agent config** -- read `agents/<name>.yaml` (default: `default`). `-f` overrides with a direct file path.
-3. **Ensure providers** -- validate providers declared in the agent config. Auto-register missing ones.
-4. **Render payload** -- `env.sh` (resolved env vars), `run.sh` (entrypoint wrapper), `task.md` (if set).
-5. **Create sandbox** -- `openshell sandbox create` with `--upload` (payload) and the startup command. Retry up to 5 times for supervisor race conditions.
+1. **Check version** -- warn if openshell CLI is below v0.0.59.
+2. **Ensure gateway** -- deploy if needed (local: Podman, remote: Helm to K8s/OCP).
+3. **Parse agent config** -- read `agents/<name>.yaml` (default: `default`). `-f` overrides with a direct file path.
+4. **Ensure providers** -- auto-register missing providers. Three registration flows:
+   - **Standard** (`--from-existing`): GitHub, Atlassian -- OpenShell discovers credentials from local env.
+   - **ADC** (`--from-gcloud-adc`): Vertex AI -- reads ADC file, configures inference routing.
+   - **Custom**: GWS -- multi-step OAuth refresh flow (harness workaround until OpenShell adds native support).
+5. **Render payload** -- `run.sh` (entrypoint wrapper with PATH setup, git auth, `-p` task), `task.md` (if set).
+6. **Create sandbox** -- `openshell sandbox create` with `--env` (env vars), `--upload` (payload), and startup command. Retry up to 5 times.
 
-Both local and remote targets create the sandbox directly from the user's machine. Remote gateways are accessed via an external Route endpoint with mTLS authentication.
+`--provider-refresh` deletes and recreates all providers (replaces the old `harness providers --force`).
 
 ### `harness create [--agent NAME] [-f FILE] [--name SANDBOX]`
 
-Create a sandbox without deploying the gateway. Errors if no gateway is active.
+Create a sandbox without deploying the gateway. Assumes gateway is running. Auto-registers missing providers.
 
 ### `harness connect [NAME]`
 
@@ -72,27 +78,19 @@ Reconnect to a running sandbox via `openshell sandbox connect`.
 
 ### `harness deploy [local|ocp|kind]`
 
-Deploy or verify the gateway for a target. Reads `gateways/<target>/gateway.toml`.
-
-### `harness providers [--force]`
-
-Register providers with the gateway. Reads `providers.toml` for the catalog, imports profiles from `agents/providers/profiles/`.
-
-### `harness preflight [--strict]`
-
-Validate local credentials and prerequisites against `providers.toml`.
+Deploy or verify the gateway for a target. Reads `gateways/<target>/gateway.yaml`.
 
 ### `harness status`
 
-Show gateway, provider, and sandbox status. Read-only.
+Show sandbox status. Read-only.
 
 ### `harness logs [NAME] [-f|--follow]`
 
-Stream logs for a sandbox (name resolution delegated to `openshell sandbox logs` when NAME is omitted).
+Stream logs for a sandbox.
 
 ### `harness stop [NAME]` / `harness start [NAME]`
 
-Stop or start a sandbox without deleting it. When NAME is omitted and exactly one sandbox is running, it is used; otherwise the command errors.
+Stop or start a sandbox without deleting it.
 
 ### `harness teardown [--sandboxes] [--providers] [--k8s]`
 
@@ -104,11 +102,10 @@ Tear down resources. At least one flag required.
 |------|---------|
 | `agents/*.yaml` | Agent config: image, entrypoint, providers, env, task |
 | `agents/providers/profiles/` | OpenShell provider profile YAMLs |
-| `providers.toml` | Provider catalog: required inputs, health checks |
-| `gateways/*/gateway.toml` | Deployment target config with Helm, images, RBAC |
-| `openshell.toml` | Deployment-level overrides (enabled providers, inference model) |
+| `gateways/*/gateway.yaml` | Deployment target config with Helm, images, RBAC |
 | `sandbox/Dockerfile` | Sandbox image: OpenShell base + MCP servers + CLI tools |
 | `sandbox/policy.yaml` | Network egress rules applied to sandboxes |
+| `sandbox/opencode.json` | MCP server config for OpenCode agent |
 
 ## Image Tags
 
@@ -136,12 +133,11 @@ The CLI resolves images from its embedded version (set via `-ldflags` at build t
 | `OPENSHELL_NAMESPACE` | Override K8s namespace (default: `openshell`) |
 | `OPENSHELL_CLI` | Override openshell binary path |
 | `OPENSHELL_MODEL` | Inference model for provider registration (default: `claude-sonnet-4-6`) |
-| `OPENSHELL_CHART_VERSION` | Override Helm chart version (beats `openshell.toml` and `gateway.toml`) |
+| `OPENSHELL_CHART_VERSION` | Override Helm chart version (beats `gateway.yaml`) |
 | `PULL_SECRET` / `SANDBOX_PULL_SECRET` | Image pull secret names passed to the Helm install |
-| `CONFIG_TOML` / `PROVIDERS_TOML` | Override paths to `openshell.toml` / `providers.toml` (preflight) |
 | `KUBECONFIG` | K8s cluster config for remote targets |
 
-`GATEWAY_NAME` is internal — used by env override in gateway config, not typically set by users.
+`GATEWAY_NAME` is internal -- used by env override in gateway config, not typically set by users.
 
 ## Payload
 
@@ -149,11 +145,9 @@ The harness renders agent config into a self-contained payload uploaded to `/san
 
 ```
 openshell/
-  env.sh          -- export KEY="value" (resolved from agent config)
-  run.sh          -- sources env.sh, validates entrypoint, execs it
-  sandbox.env     -- same as env.sh (sourced by sandbox startup.sh)
-  task.md         -- task file with envsubst applied
+  run.sh          -- validates entrypoint, execs it (with -p task if set)
+  task.md         -- task file with envsubst applied (if task: is set)
   bin/            -- wrapper scripts
 ```
 
-`sandbox.env` is sourced as the sandbox's initial command, making env vars available in all subsequent `sandbox exec` sessions. `run.sh` is the entrypoint for interactive mode.
+Environment variables are injected directly via `--env KEY=VALUE` flags on `openshell sandbox create` -- no file upload needed for env vars. `run.sh` is the entrypoint for interactive mode.
