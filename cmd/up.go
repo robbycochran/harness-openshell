@@ -140,7 +140,7 @@ func upLocal(opts upLocalOpts) error {
 		}
 	} else if gw.InferenceGet() != nil {
 		if opts.gwCfg == nil {
-			return fmt.Errorf("no active gateway — use --local or: harness deploy ocp")
+			return fmt.Errorf("no active gateway — use --gateway local or: harness deploy ocp")
 		}
 		kc := k8s.New("", k8s.DefaultNamespace())
 		clusterRunner := k8s.New("", "")

@@ -52,16 +52,21 @@ if [[ -z "$TARGET" ]]; then
   exit 1
 fi
 
+HARNESS_FLAGS=()
 if $DEBUG; then
-  HARNESS="$HARNESS --show-commands"
+  HARNESS_FLAGS+=(--show-commands)
 fi
 
 LOG_FILE="${TEST_LOG_FILE:-}"
 if [[ -n "$LOG_FILE" ]]; then
   mkdir -p "$(dirname "$LOG_FILE")"
-  HARNESS="$HARNESS --verbose"
+  HARNESS_FLAGS+=(--verbose)
   exec > >(tee -a "$LOG_FILE") 2>&1
 fi
+
+harness() {
+  "$HARNESS" "${HARNESS_FLAGS[@]}" "$@"
+}
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -202,14 +207,14 @@ summary() {
 test_errors() {
   echo "=== test: error scenarios ==="
 
-  step_fail "nonexistent profile" "$HARNESS" up --gateway local --agent nonexistent --no-tty
+  step_fail "nonexistent profile" harness up --gateway local --agent nonexistent --no-tty
 
   if $REUSE_GATEWAY; then
-    step "teardown (first)" "$HARNESS" teardown --sandboxes --providers
-    step "teardown (second)" "$HARNESS" teardown --sandboxes --providers
+    step "teardown (first)" harness teardown --sandboxes --providers
+    step "teardown (second)" harness teardown --sandboxes --providers
   else
-    step "teardown (first)" "$HARNESS" teardown --sandboxes --providers --k8s
-    step "teardown (second)" "$HARNESS" teardown --sandboxes --providers --k8s
+    step "teardown (first)" harness teardown --sandboxes --providers --k8s
+    step "teardown (second)" harness teardown --sandboxes --providers --k8s
   fi
 
   echo ""
@@ -222,30 +227,30 @@ test_local() {
   $NO_PROVIDERS && mode="$mode, no-providers"
   echo "=== test-flow: local ($mode) ==="
 
-  step "teardown" "$HARNESS" teardown --sandboxes --providers
-  step "deploy" "$HARNESS" deploy local
+  step "teardown" harness teardown --sandboxes --providers
+  step "deploy" harness deploy local
   step "gateway reachable" "$CLI" inference get
 
   # up auto-registers providers when missing
   local sandbox_name="test-agent"
-  step_output "sandbox create (up)" "$HARNESS" up --gateway local --name "$sandbox_name" --agent "$PROFILE" --no-tty
+  step_output "sandbox create (up)" harness up --gateway local --name "$sandbox_name" --agent "$PROFILE" --no-tty
   sandbox_verify "$sandbox_name"
   step "sandbox delete" "$CLI" sandbox delete "$sandbox_name"
 
   local create_name="test-create"
-  step_output "sandbox create (create)" "$HARNESS" create --name "$create_name" --agent ci
+  step_output "sandbox create (create)" harness create --name "$create_name" --agent ci
   step "sandbox verify (create)" "$CLI" sandbox exec --name "$create_name" -- echo "hello"
   step "sandbox delete (create)" "$CLI" sandbox delete "$create_name"
 
   if ! $NO_PROVIDERS; then
     echo ""
     echo "=== test: missing providers ==="
-    step "teardown providers" "$HARNESS" teardown --providers
-    step_output "up with no providers" "$HARNESS" up --gateway local --name test-noprov --no-tty
-    step "cleanup" "$HARNESS" teardown --sandboxes
+    step "teardown providers" harness teardown --providers
+    step_output "up with no providers" harness up --gateway local --name test-noprov --no-tty
+    step "cleanup" harness teardown --sandboxes
   fi
 
-  step "teardown (clean)" "$HARNESS" teardown --sandboxes --providers
+  step "teardown (clean)" harness teardown --sandboxes --providers
 }
 
 # ── GWS lifecycle test ───────────────────────────────────────────────
@@ -282,12 +287,12 @@ test_kind() {
     return
   fi
 
-  step "teardown" "$HARNESS" teardown --sandboxes --providers --k8s
-  step "deploy" "$HARNESS" deploy kind
+  step "teardown" harness teardown --sandboxes --providers --k8s
+  step "deploy" harness deploy kind
   step "gateway reachable" "$CLI" inference get
 
   local sandbox_name="test-kind"
-  step_output "sandbox create" "$HARNESS" up --name "$sandbox_name" --agent "$PROFILE" --no-tty
+  step_output "sandbox create" harness up --name "$sandbox_name" --agent "$PROFILE" --no-tty
   sandbox_verify "$sandbox_name"
 
   if ! $NO_PROVIDERS; then
@@ -296,7 +301,7 @@ test_kind() {
 
   step "sandbox delete" "$CLI" sandbox delete "$sandbox_name"
 
-  step "teardown (clean)" "$HARNESS" teardown --sandboxes --providers --k8s
+  step "teardown (clean)" harness teardown --sandboxes --providers --k8s
   echo ""
 }
 
@@ -311,33 +316,33 @@ test_ocp() {
     OCP_GW=$("$CLI" gateway list 2>/dev/null | strip_ansi | awk '/-remote-/ {gsub(/^\*/, ""); print $1; exit}')
     [[ -n "$OCP_GW" ]] && "$CLI" gateway select "$OCP_GW" 2>/dev/null || true
 
-    step "teardown sandboxes+providers" "$HARNESS" teardown --sandboxes --providers
+    step "teardown sandboxes+providers" harness teardown --sandboxes --providers
     if ! "$CLI" inference get &>/dev/null; then
-      step "deploy" "$HARNESS" deploy ocp
+      step "deploy" harness deploy ocp
     else
       step "gateway reachable" "$CLI" inference get
     fi
   else
-    step "teardown" "$HARNESS" teardown --sandboxes --providers --k8s
-    step "deploy" "$HARNESS" deploy ocp
+    step "teardown" harness teardown --sandboxes --providers --k8s
+    step "deploy" harness deploy ocp
   fi
 
   local sandbox_name
   if $NO_PROVIDERS; then
     sandbox_name="test-ocp"
-    step_output "sandbox create" "$HARNESS" create --agent=ci --name "$sandbox_name"
+    step_output "sandbox create" harness create --agent=ci --name "$sandbox_name"
   else
     sandbox_name="agent"
-    step_output "sandbox create (up)" "$HARNESS" up --gateway ocp --name "$sandbox_name" --no-tty
+    step_output "sandbox create (up)" harness up --gateway ocp --name "$sandbox_name" --no-tty
   fi
 
   sandbox_verify "$sandbox_name"
   step "sandbox delete" "$CLI" sandbox delete "$sandbox_name"
 
   if $REUSE_GATEWAY; then
-    step "teardown (sandboxes+providers)" "$HARNESS" teardown --sandboxes --providers
+    step "teardown (sandboxes+providers)" harness teardown --sandboxes --providers
   else
-    step "teardown (clean)" "$HARNESS" teardown --sandboxes --providers --k8s
+    step "teardown (clean)" harness teardown --sandboxes --providers --k8s
   fi
 }
 
