@@ -14,20 +14,20 @@ import (
 func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 	var (
 		agentName   string
-		agentFile   string
+		agentProfile string
 		sandboxName string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "create [flags]",
 		Short: "Create a sandbox without attaching",
-		Long:  "Validate gateway readiness, run preflight checks, and deploy a sandbox. Does not attach interactively — use 'harness connect' afterward.",
+		Long:  "Validate gateway readiness, run preflight checks, and deploy a sandbox. Does not attach interactively — use 'openshell sandbox connect' afterward.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 && sandboxName == "" {
 				sandboxName = args[0]
 			}
 
-			agentCfg, err := resolveAgentConfig(harnessDir, agentName, agentFile)
+			agentCfg, err := resolveAgentConfig(harnessDir, agentName, agentProfile)
 			if err != nil {
 				return err
 			}
@@ -54,24 +54,10 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 			status.Infof("Image: %s", sandboxImage)
 
 			// 3. Ensure providers are registered
-			status.Header("Providers")
-			providerNames := agentCfg.ProviderNames()
-			registered, missing := gateway.ValidateProviders(providerNames, gw)
-			if len(missing) > 0 {
-				if err := registerProviders(harnessDir, gw, false, agentCfg.Providers); err != nil {
-					status.Warn(fmt.Sprintf("provider registration: %v", err))
-				}
-				registered, missing = gateway.ValidateProviders(providerNames, gw)
-			}
-			for _, n := range registered {
-				status.OKf("%s: attached", n)
-			}
-			for _, n := range missing {
-				status.Failf("%s: not registered", n)
-			}
+			registered := ensureProviders(harnessDir, gw, agentCfg, false)
 
 			// 4. Deploy the sandbox
-			status.Header("Creating sandbox")
+			status.Header("Sandbox")
 			payloadDir, err := os.MkdirTemp("", "harness-payload-")
 			if err != nil {
 				return fmt.Errorf("creating payload dir: %w", err)
@@ -95,14 +81,14 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 				env:        agentCfg.BuildEnvMap(),
 				onSuccess: func(n string) {
 					fmt.Println()
-					status.OKf("Sandbox created: %s — connect with: harness connect %s", n, n)
+					status.OKf("Sandbox created: %s — connect with: openshell sandbox connect %s", n, n)
 				},
 			})
 		},
 	}
 
 	cmd.Flags().StringVar(&agentName, "agent", "default", "Agent config name (from agents/)")
-	cmd.Flags().StringVarP(&agentFile, "file", "f", "", "Path to agent YAML file (overrides --agent)")
+	cmd.Flags().StringVarP(&agentProfile, "agent-profile", "f", "", "Path to agent YAML file (overrides --agent)")
 	cmd.Flags().StringVar(&sandboxName, "name", "", "Sandbox name (overrides agent config)")
 
 	return cmd

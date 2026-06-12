@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/robbycochran/harness-openshell/internal/gateway"
+	"github.com/robbycochran/harness-openshell/internal/status"
 )
 
 // sandboxOpts holds the parameters that vary between callers of
@@ -74,7 +75,7 @@ func createSandbox(opts sandboxOpts) error {
 			return nil
 		}
 
-		fmt.Printf("  Attempt %d failed: %v, retrying in 5s...\n", attempt, err)
+		status.Warnf("attempt %d: %v, retrying in 5s", attempt, err)
 		opts.gw.SandboxDelete(opts.name) // best-effort cleanup
 
 		if attempt == 5 {

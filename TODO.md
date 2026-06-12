@@ -11,7 +11,7 @@
 
 ### Image registry as gateway config vs env override
 - `SANDBOX_IMAGE` env var overrides the version-based image resolution (for dev/CI)
-- Consider: gateway.toml uses a `registry` field and images are relative to it
+- Consider: gateway.yaml uses a `registry` field and images are relative to it
 
 ### registerProviders should filter by agent's provider list
 - `registerProviders()` in `cmd/providers.go` uses the gateway config's provider
@@ -26,10 +26,8 @@
 
 ## Config Format
 
-- [ ] Remove `providers.toml`; add provider profile validation in its place
-- [ ] Convert gateway configs from TOML to YAML
 - [ ] Specify/document the YAML formats (agent config, provider profiles)
-- [ ] Document non-secret provider env vars (what `providers[].config` captures
+- [ ] Document non-secret provider env vars (what `providers[].env` captures
       and why it exists alongside secret credentials)
 
 ## CLI
@@ -47,12 +45,11 @@
 ## Testing
 
 ### Current coverage
-- Go unit tests across cmd/ and all internal/ packages
-- 29 bats preflight tests (run in CI via `.github/workflows/ci.yml`)
+- Go unit tests across cmd/ and all internal/ packages (run in CI via `.github/workflows/ci.yml`)
 - Integration: local + kind + OCP via `make test-all`
 
 ### Gaps
-- [ ] Integration test for `providers --force`
+- [ ] Integration test for `harness up --provider-refresh`
 
 ## Release
 
@@ -62,7 +59,7 @@
 
 ## Deferred (post-0.1)
 
-- [ ] Gateway-level LLM proxy/logging (gateway.toml `[proxy]` section)
+- [ ] Gateway-level LLM proxy/logging (gateway.yaml proxy section)
 - [ ] Multi-agent workflow support (fleet.yaml / workflow.yaml)
 - [ ] `harness policy suggest` (DenialEvent stream -> policy proposals)
 - [ ] Fleet management (multi-gateway kubectl-context style)

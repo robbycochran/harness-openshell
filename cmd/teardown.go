@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -32,9 +31,9 @@ func NewTeardownCmd(harnessDir, cli string) *cobra.Command {
 			activeGW := gw.ActiveGateway()
 
 			if activeGW != "" {
-				fmt.Printf("Active gateway: %s\n", activeGW)
+				status.Infof("Active gateway: %s", activeGW)
 			} else {
-				fmt.Println("Active gateway: none")
+				status.Info("Active gateway: none")
 			}
 			fmt.Println()
 
@@ -49,8 +48,7 @@ func NewTeardownCmd(harnessDir, cli string) *cobra.Command {
 			if k8sFlag {
 				ns := k8s.DefaultNamespace()
 				// Load OCP gateway config for SCC/secret names; fall back to defaults
-				gwDir := filepath.Join(harnessDir, "gateways", "ocp")
-				gwCfg, _ := gateway.LoadConfig(gwDir)
+				gwCfg, _ := resolveGatewayConfig(harnessDir, "ocp")
 				teardownK8s(gw, gwCfg, k8s.New("", ns), k8s.New("", ""))
 			}
 

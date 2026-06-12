@@ -139,27 +139,6 @@ func TestCmdShowCommands_RedactsCredentials(t *testing.T) {
 	}
 }
 
-func TestShowEquivalentCmd_OnlyWhenEnabled(t *testing.T) {
-	ShowCommands = false
-	out := captureStdout(func() {
-		ShowEquivalentCmd("openshell", "sandbox", "list")
-	})
-	if out != "" {
-		t.Errorf("expected no output when ShowCommands=false, got: %q", out)
-	}
-}
-
-func TestShowEquivalentCmd_Prints(t *testing.T) {
-	ShowCommands = true
-	defer func() { ShowCommands = false }()
-	out := captureStdout(func() {
-		ShowEquivalentCmd("openshell", "sandbox", "list")
-	})
-	if !strings.Contains(out, "$ openshell sandbox list") {
-		t.Errorf("expected equivalent command, got: %q", out)
-	}
-}
-
 func captureStdout(fn func()) string {
 	old := os.Stdout
 	r, w, _ := os.Pipe()

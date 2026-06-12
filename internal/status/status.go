@@ -22,16 +22,6 @@ func Cmd(name string, args ...string) {
 	}
 }
 
-// ShowEquivalentCmd displays the equivalent openshell CLI command for
-// an operation, regardless of how it was actually executed. Use this
-// in gRPC Gateway implementations to show the CLI equivalent.
-func ShowEquivalentCmd(name string, args ...string) {
-	if !ShowCommands {
-		return
-	}
-	fmt.Printf("  %s\n", formatCmdLine(name, args))
-}
-
 func formatCmdLine(name string, args []string) string {
 	var b strings.Builder
 	b.WriteString("$ ")
@@ -93,10 +83,10 @@ func OKf(format string, a ...any)    { fmt.Printf("  ✓ "+format+"\n", a...) }
 func Fail(msg string)                { fmt.Println("  ✗ " + msg) }
 func Failf(format string, a ...any)  { fmt.Printf("  ✗ "+format+"\n", a...) }
 func Warn(msg string)                { fmt.Println("  ! " + msg) }
+func Warnf(format string, a ...any)  { fmt.Printf("  ! "+format+"\n", a...) }
 func Info(msg string)                { fmt.Println("  - " + msg) }
 func Infof(format string, a ...any)  { fmt.Printf("  - "+format+"\n", a...) }
 func Detail(msg string)              { fmt.Println("    " + msg) }
-func Detailf(format string, a ...any){ fmt.Printf("    "+format+"\n", a...) }
 func Sub(msg string)                 { fmt.Println("      " + msg) }
 func Step(n int, msg string)         { fmt.Printf("\n=== Step %d: %s ===\n", n, msg) }
 func Section(title string)           { fmt.Printf("\n=== %s ===\n", title) }

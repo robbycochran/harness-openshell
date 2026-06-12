@@ -17,14 +17,11 @@ type Gateway interface {
 	SandboxStatus() ([]SandboxInfo, error)
 	SandboxCreate(opts SandboxCreateOpts) error
 	SandboxDelete(name string) error
-	SandboxConnect(name string) error
-	SandboxLogs(name string, follow bool) error
 	SandboxStop(name string) error
 	SandboxStart(name string) error
 
 	// Inference
 	InferenceGet() error
-	InferenceModel() string
 	InferenceSet(provider, model string) error
 	InferenceRemove() error
 

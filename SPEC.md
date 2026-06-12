@@ -47,18 +47,19 @@ Fields:
 - `env` -- additional environment variables injected via `--env` on sandbox create (empty values read from host env)
 - `include` -- extra files to include in the payload
 - `policy` -- path to a network policy YAML
+- `gateway` -- target gateway name (overrides active gateway)
 
-Provider profiles live in `agents/providers/profiles/`. These are imported to the gateway during provider registration.
+Provider profiles live in `profiles/providers/`. These are imported to the gateway during provider registration.
 
 ## CLI
 
-### `harness up [--local|--remote] [--agent NAME] [-f FILE] [--name SANDBOX] [--no-tty] [--provider-refresh]`
+### `harness up [--gateway NAME] [--gateway-profile FILE] [--agent NAME] [--agent-profile|-f FILE] [--name SANDBOX] [--no-tty] [--provider-refresh]`
 
 Full flow: deploy gateway, register providers, render agent config, create sandbox.
 
 1. **Check version** -- warn if openshell CLI is below v0.0.59.
-2. **Ensure gateway** -- deploy if needed (local: Podman, remote: Helm to K8s/OCP).
-3. **Parse agent config** -- read `agents/<name>.yaml` (default: `default`). `-f` overrides with a direct file path.
+2. **Ensure gateway** -- deploy if needed (local: Podman, remote: Helm to K8s/OCP). `--gateway` selects a profile by name; `--gateway-profile` loads from a file path.
+3. **Parse agent config** -- read `agents/<name>.yaml` (default: `default`). `--agent-profile` (`-f`) overrides with a direct file path.
 4. **Ensure providers** -- auto-register missing providers. Three registration flows:
    - **Standard** (`--from-existing`): GitHub, Atlassian -- OpenShell discovers credentials from local env.
    - **ADC** (`--from-gcloud-adc`): Vertex AI -- reads ADC file, configures inference routing.
@@ -68,25 +69,17 @@ Full flow: deploy gateway, register providers, render agent config, create sandb
 
 `--provider-refresh` deletes and recreates all providers (replaces the old `harness providers --force`).
 
-### `harness create [--agent NAME] [-f FILE] [--name SANDBOX]`
+### `harness create [--agent NAME] [--agent-profile|-f FILE] [--name SANDBOX]`
 
 Create a sandbox without deploying the gateway. Assumes gateway is running. Auto-registers missing providers.
 
-### `harness connect [NAME]`
-
-Reconnect to a running sandbox via `openshell sandbox connect`.
-
 ### `harness deploy [local|ocp|kind]`
 
-Deploy or verify the gateway for a target. Reads `gateways/<target>/gateway.yaml`.
+Deploy or verify the gateway for a target. Reads `profiles/gateways/<target>.yaml`.
 
 ### `harness status`
 
 Show sandbox status. Read-only.
-
-### `harness logs [NAME] [-f|--follow]`
-
-Stream logs for a sandbox.
 
 ### `harness stop [NAME]` / `harness start [NAME]`
 
@@ -101,8 +94,8 @@ Tear down resources. At least one flag required.
 | File | Purpose |
 |------|---------|
 | `agents/*.yaml` | Agent config: image, entrypoint, providers, env, task |
-| `agents/providers/profiles/` | OpenShell provider profile YAMLs |
-| `gateways/*/gateway.yaml` | Deployment target config with Helm, images, RBAC |
+| `profiles/providers/` | OpenShell provider profile YAMLs |
+| `profiles/gateways/*.yaml` | Gateway profiles: deployment target config with inline Helm values |
 | `sandbox/Dockerfile` | Sandbox image: OpenShell base + MCP servers + CLI tools |
 | `sandbox/policy.yaml` | Network egress rules applied to sandboxes |
 | `sandbox/opencode.json` | MCP server config for OpenCode agent |

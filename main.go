@@ -16,6 +16,15 @@ var version = "dev"
 //go:embed agents/builtin.yaml
 var defaultAgentConfig []byte
 
+//go:embed profiles/gateways/local.yaml
+var localGatewayProfile []byte
+
+//go:embed profiles/gateways/kind.yaml
+var kindGatewayProfile []byte
+
+//go:embed profiles/gateways/ocp.yaml
+var ocpGatewayProfile []byte
+
 func main() {
 	harnessDir := detectHarnessDir()
 
@@ -44,16 +53,19 @@ func main() {
 
 	cmd.Version = version
 	cmd.DefaultAgentConfig = defaultAgentConfig
+	cmd.EmbeddedGatewayProfiles = map[string][]byte{
+		"local": localGatewayProfile,
+		"kind":  kindGatewayProfile,
+		"ocp":   ocpGatewayProfile,
+	}
 	root.CompletionOptions.HiddenDefaultCmd = true
 
 	root.AddCommand(
 		cmd.NewUpCmd(harnessDir, cli),
 		cmd.NewCreateCmd(harnessDir, cli),
-		cmd.NewConnectCmd(cli),
 		cmd.NewDeployCmd(harnessDir, cli),
 		cmd.NewTeardownCmd(harnessDir, cli),
 		cmd.NewStatusCmd(harnessDir, cli),
-		cmd.NewLogsCmd(harnessDir, cli),
 		cmd.NewStopCmd(harnessDir, cli),
 		cmd.NewStartCmd(harnessDir, cli),
 	)

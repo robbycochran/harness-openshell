@@ -9,7 +9,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/robbycochran/harness-openshell/internal/status"
 )
@@ -95,20 +94,6 @@ func (c *CLI) CheckMinVersion(minVersion string) error {
 
 func (c *CLI) InferenceGet() error {
 	return c.silent("inference", "get")
-}
-
-func (c *CLI) InferenceModel() string {
-	out, err := c.output("inference", "get")
-	if err != nil {
-		return ""
-	}
-	for _, line := range strings.Split(string(out), "\n") {
-		cleaned := ansiRE.ReplaceAllString(line, "")
-		if strings.Contains(cleaned, "Model:") {
-			return strings.TrimSpace(strings.SplitN(cleaned, "Model:", 2)[1])
-		}
-	}
-	return ""
 }
 
 func (c *CLI) ActiveGateway() string {
@@ -306,17 +291,6 @@ func (c *CLI) SandboxStatus() ([]SandboxInfo, error) {
 	return infos, nil
 }
 
-func (c *CLI) SandboxLogs(name string, follow bool) error {
-	args := []string{"sandbox", "logs"}
-	if name != "" {
-		args = append(args, name)
-	}
-	if follow {
-		args = append(args, "--follow")
-	}
-	return c.passthrough(args...)
-}
-
 func (c *CLI) SandboxStop(name string) error {
 	return c.silent("sandbox", "stop", name)
 }
@@ -327,18 +301,6 @@ func (c *CLI) SandboxStart(name string) error {
 
 func (c *CLI) SandboxDelete(name string) error {
 	return c.silent("sandbox", "delete", name)
-}
-
-func (c *CLI) SandboxConnect(name string) error {
-	path, err := exec.LookPath(c.bin)
-	if err != nil {
-		return err
-	}
-	args := []string{c.bin, "sandbox", "connect"}
-	if name != "" {
-		args = append(args, name)
-	}
-	return syscall.Exec(path, args, os.Environ())
 }
 
 func parseFirstColumn(out []byte) []string {
