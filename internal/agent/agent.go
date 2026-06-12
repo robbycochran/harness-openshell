@@ -17,6 +17,7 @@ type ProviderRef struct {
 
 type AgentConfig struct {
 	Name       string            `yaml:"name"`
+	Gateway    string            `yaml:"gateway,omitempty"`
 	Providers  []ProviderRef     `yaml:"providers"`
 	Env        map[string]string `yaml:"env,omitempty"`
 	Task       string            `yaml:"task,omitempty"`

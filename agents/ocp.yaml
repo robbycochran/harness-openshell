@@ -1,0 +1,26 @@
+# OCP agent — deploys to an OpenShift cluster.
+#
+# Usage:
+#   harness up -f agents/ocp.yaml
+#
+# The gateway field tells harness to deploy to OCP instead of local Podman.
+# Requires: KUBECONFIG, kubectl, helm, cluster access.
+
+name: agent
+gateway: ocp
+entrypoint: claude
+tty: true
+
+providers:
+  - profile: github
+  - profile: vertex-local
+  - profile: atlassian
+    config:
+      JIRA_URL: ${JIRA_URL}
+      JIRA_USERNAME: ${JIRA_USERNAME}
+  - profile: gws
+
+env:
+  ANTHROPIC_BASE_URL: https://inference.local
+  ANTHROPIC_API_KEY: sk-ant-openshell-proxy-managed
+  CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1"

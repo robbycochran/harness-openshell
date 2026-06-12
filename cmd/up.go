@@ -50,7 +50,10 @@ func NewUpCmd(harnessDir, cli string) *cobra.Command {
 			gwName := "local"
 			if remote {
 				gwName = "ocp"
+			} else if !local && agentCfg.Gateway != "" {
+				gwName = agentCfg.Gateway
 			}
+			isRemote := gwName != "local"
 			gwDir := filepath.Join(harnessDir, "gateways", gwName)
 			gwCfg, _ := gateway.LoadConfig(gwDir)
 
@@ -58,7 +61,7 @@ func NewUpCmd(harnessDir, cli string) *cobra.Command {
 				harnessDir:      harnessDir,
 				gw:              gw,
 				gwCfg:           gwCfg,
-				ensureLocal:     !remote,
+				ensureLocal:     !isRemote,
 				agentCfg:        agentCfg,
 				agentPath:       agentPath,
 				sandboxName:     sandboxName,

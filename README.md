@@ -118,6 +118,41 @@ The harness also handles: local gateway deployment, version checking (openshell 
 
 Credentials are proxy-managed -- the sandbox holds placeholder tokens; real secrets are substituted by the gateway at the network boundary.
 
+### OCP Deployment
+
+The `gateway:` field tells the harness which deployment target to use:
+
+```yaml
+# agents/ocp.yaml
+name: agent
+gateway: ocp
+entrypoint: claude
+tty: true
+
+providers:
+  - profile: github
+  - profile: vertex-local
+  - profile: atlassian
+    config:
+      JIRA_URL: ${JIRA_URL}
+      JIRA_USERNAME: ${JIRA_USERNAME}
+  - profile: gws
+
+env:
+  ANTHROPIC_BASE_URL: https://inference.local
+  ANTHROPIC_API_KEY: sk-ant-openshell-proxy-managed
+  CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1"
+```
+
+```bash
+harness up -f agents/ocp.yaml    # deploys to OCP (reads gateways/ocp/gateway.yaml)
+harness up                        # defaults to local Podman
+```
+
+`--local` and `--remote` flags override the `gateway:` field.
+
+### Task Agents
+
 For non-interactive task agents, set `task:` and `tty: false`:
 
 ```yaml
@@ -130,7 +165,7 @@ tty: false
 
 When `task:` is set, the harness passes its content to the entrypoint via `-p`.
 
-### OpenCode Support
+### OpenCode
 
 [OpenCode](https://github.com/opencode-ai/opencode) is supported as an alternative entrypoint:
 
@@ -138,7 +173,7 @@ When `task:` is set, the harness passes its content to the entrypoint via `-p`.
 harness up --agent opencode
 ```
 
-Uses the same providers and gateway -- just a different agent binary. See `agents/opencode.yaml`.
+Same providers and gateway -- just a different agent binary. See `agents/opencode.yaml`.
 
 ## Local Setup
 
