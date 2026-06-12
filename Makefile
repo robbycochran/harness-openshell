@@ -97,12 +97,9 @@ dev-push:
 
 ## ── Convenience targets ───────────────────────────────────────────────
 
-## Create a release tag (e.g., make tag v=0.2.0)
+## Show the current version tag (from git describe)
 tag:
-	@test -n "$(v)" || { echo "Usage: make tag v=0.2.0"; exit 1; }
-	git tag -a "v$(v)" -m "v$(v)"
-	@echo "Tagged: v$(v)"
-	@echo "Push with: git push origin v$(v)"
+	@echo $(VERSION)
 
 ## Clean built binaries
 clean:
