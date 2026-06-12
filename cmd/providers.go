@@ -50,7 +50,9 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool, provid
 	gw.ProviderProfileImport(profilesDir)
 
 	if _, ok := wanted["github"]; ok {
-		registerStandard("github", "github", gw, nil)
+		if err := registerStandard("github", "github", gw, nil); err != nil {
+			return err
+		}
 	}
 	if _, ok := wanted["vertex-local"]; ok {
 		home, _ := os.UserHomeDir()
@@ -63,10 +65,14 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool, provid
 			configs = append(configs, "VERTEX_AI_PROJECT_ID="+project)
 		}
 		configs = append(configs, "VERTEX_AI_REGION="+region)
-		registerADC("vertex-local", "google-vertex-ai", model, gw, configs)
+		if err := registerADC("vertex-local", "google-vertex-ai", model, gw, configs); err != nil {
+			return err
+		}
 	}
 	if _, ok := wanted["atlassian"]; ok {
-		registerStandard("atlassian", "atlassian", gw, nil)
+		if err := registerStandard("atlassian", "atlassian", gw, nil); err != nil {
+			return err
+		}
 	}
 	if _, ok := wanted["gws"]; ok {
 		if err := registerGWS(harnessDir, gw); err != nil {
@@ -77,39 +83,38 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool, provid
 	return nil
 }
 
-func registerStandard(name, profileType string, gw gateway.Gateway, configs []string) {
+func registerStandard(name, profileType string, gw gateway.Gateway, configs []string) error {
 	if gw.ProviderGet(name) == nil {
 		status.Infof("%s: exists", name)
-		return
+		return nil
 	}
 	if err := gw.ProviderCreate(name, profileType, gateway.ProviderCreateOpts{
 		FromExisting: true,
 		Configs:      configs,
 	}); err != nil {
-		status.Infof("%s: skipped (%v)", name, err)
-		return
+		return fmt.Errorf("%s: registration failed: %w", name, err)
 	}
 	status.OKf("%s: registered", name)
+	return nil
 }
 
-func registerADC(name, profileType, model string, gw gateway.Gateway, configs []string) {
+func registerADC(name, profileType, model string, gw gateway.Gateway, configs []string) error {
 	if gw.ProviderGet(name) == nil {
 		status.Infof("%s: exists", name)
-		return
+		return nil
 	}
 	if err := gw.ProviderCreate(name, profileType, gateway.ProviderCreateOpts{
 		FromADC: true,
 		Configs: configs,
 	}); err != nil {
-		status.Infof("%s: skipped (%v)", name, err)
-		return
+		return fmt.Errorf("%s: registration failed: %w", name, err)
 	}
 	status.OKf("%s: registered", name)
 	if err := gw.InferenceSet(name, model); err != nil {
-		status.Infof("inference: %v", err)
-		return
+		return fmt.Errorf("inference: %w", err)
 	}
 	status.OKf("inference: model %s", model)
+	return nil
 }
 
 func registerGWS(harnessDir string, gw gateway.Gateway) error {
