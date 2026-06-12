@@ -70,9 +70,9 @@ Current workarounds and their upstream tracking:
 
 | Workaround | Why | Upstream |
 |------------|-----|----------|
-| Custom sandbox image | Adds mcp-atlassian and GWS CLI to community base | Upstreaming MCP integrations |
+| Custom sandbox image | Adds mcp-atlassian, GWS CLI, and opencode-ai to community base | Upstreaming MCP integrations |
 | `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1` | Vertex AI rejects `context_management` beta header | Anthropic/Google to align APIs |
-| Atlassian `JIRA_URL`/`JIRA_USERNAME` as `--config` material | Provider v2 config keys not injected as env vars yet | OpenShell roadmap |
+| Atlassian `JIRA_URL`/`JIRA_USERNAME` as agent YAML provider config | Provider v2 config keys not injected as env vars yet | OpenShell roadmap |
 
 Previously worked around, now resolved:
 
@@ -107,7 +107,7 @@ See `make help` for the full list. The test entry points:
 
 | Target | Gateway | Mode |
 |--------|---------|------|
-| `make test` | none | vet + unit tests + bats |
+| `make test` | none | vet + unit tests |
 | `make test-local` | local Podman | default locally, ci on GHA |
 | `make test-kind` | kind cluster | default locally, ci on GHA |
 | `make test-remote` | OCP | default (needs KUBECONFIG + creds) |
