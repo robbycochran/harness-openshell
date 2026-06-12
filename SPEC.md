@@ -47,6 +47,7 @@ Fields:
 - `env` -- additional environment variables injected via `--env` on sandbox create (empty values read from host env)
 - `include` -- extra files to include in the payload
 - `policy` -- path to a network policy YAML
+- `gateway` -- target gateway name (overrides active gateway)
 
 Provider profiles live in `agents/providers/profiles/`. These are imported to the gateway during provider registration.
 
@@ -72,10 +73,6 @@ Full flow: deploy gateway, register providers, render agent config, create sandb
 
 Create a sandbox without deploying the gateway. Assumes gateway is running. Auto-registers missing providers.
 
-### `harness connect [NAME]`
-
-Reconnect to a running sandbox via `openshell sandbox connect`.
-
 ### `harness deploy [local|ocp|kind]`
 
 Deploy or verify the gateway for a target. Reads `gateways/<target>/gateway.yaml`.
@@ -83,10 +80,6 @@ Deploy or verify the gateway for a target. Reads `gateways/<target>/gateway.yaml
 ### `harness status`
 
 Show sandbox status. Read-only.
-
-### `harness logs [NAME] [-f|--follow]`
-
-Stream logs for a sandbox.
 
 ### `harness stop [NAME]` / `harness start [NAME]`
 

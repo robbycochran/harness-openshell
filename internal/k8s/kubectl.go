@@ -31,7 +31,6 @@ type Runner interface {
 	RunKubectl(ctx context.Context, args ...string) (string, error)
 	RunKubectlOpts(ctx context.Context, opts KubectlOpts) (string, error)
 	RunKubectlQuiet(ctx context.Context, args ...string) error
-	RunKubectlPassthrough(ctx context.Context, args ...string) error
 	RunHelm(ctx context.Context, args ...string) error
 	RunOC(ctx context.Context, args ...string) error
 	ApplyYAML(ctx context.Context, resources ...map[string]any) error
@@ -116,21 +115,6 @@ func (c *Client) RunKubectlOpts(ctx context.Context, opts KubectlOpts) (string, 
 func (c *Client) RunKubectlQuiet(ctx context.Context, args ...string) error {
 	_, err := c.RunKubectlOpts(ctx, KubectlOpts{Args: args, Quiet: true})
 	return err
-}
-
-func (c *Client) RunKubectlPassthrough(ctx context.Context, args ...string) error {
-	if c.namespace != "" && !containsFlag(args, "-n", "--namespace") {
-		args = append([]string{"-n", c.namespace}, args...)
-	}
-	if c.kubeconfig != "" {
-		args = append([]string{"--kubeconfig", c.kubeconfig}, args...)
-	}
-	status.Cmd("kubectl", args...)
-	cmd := exec.CommandContext(ctx, "kubectl", args...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
 }
 
 func (c *Client) RunHelm(ctx context.Context, args ...string) error {

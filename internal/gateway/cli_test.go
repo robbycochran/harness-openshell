@@ -284,37 +284,6 @@ exit 0
 	}
 }
 
-func TestSandboxLogs_PassesFollow(t *testing.T) {
-	argsFile := filepath.Join(t.TempDir(), "args")
-	bin := writeStub(t, `#!/bin/bash
-echo "$@" > `+argsFile+`
-`)
-	gw := New(bin)
-	gw.SandboxLogs("my-agent", true)
-	data, _ := os.ReadFile(argsFile)
-	args := strings.TrimSpace(string(data))
-	if !strings.Contains(args, "sandbox logs my-agent --follow") {
-		t.Errorf("expected sandbox logs with --follow, got: %s", args)
-	}
-}
-
-func TestSandboxLogs_NoFollow(t *testing.T) {
-	argsFile := filepath.Join(t.TempDir(), "args")
-	bin := writeStub(t, `#!/bin/bash
-echo "$@" > `+argsFile+`
-`)
-	gw := New(bin)
-	gw.SandboxLogs("my-agent", false)
-	data, _ := os.ReadFile(argsFile)
-	args := strings.TrimSpace(string(data))
-	if strings.Contains(args, "--follow") {
-		t.Errorf("should not have --follow: %s", args)
-	}
-	if !strings.Contains(args, "sandbox logs my-agent") {
-		t.Errorf("missing sandbox logs: %s", args)
-	}
-}
-
 func TestSandboxList_Empty(t *testing.T) {
 	bin := writeStub(t, `#!/bin/bash
 printf "NAME\tPHASE\n"
@@ -351,18 +320,6 @@ printf "  local\thttps://127.0.0.1:17670\n"
 	active := gw.ActiveGateway()
 	if active != "" {
 		t.Errorf("ActiveGateway = %q, want empty", active)
-	}
-}
-
-func TestInferenceModel_ParsesModel(t *testing.T) {
-	bin := writeStub(t, `#!/bin/bash
-echo "Provider: vertex-local"
-echo "Model: claude-sonnet-4-6"
-`)
-	gw := New(bin)
-	model := gw.InferenceModel()
-	if model != "claude-sonnet-4-6" {
-		t.Errorf("InferenceModel = %q, want claude-sonnet-4-6", model)
 	}
 }
 

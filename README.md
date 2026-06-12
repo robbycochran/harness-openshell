@@ -277,19 +277,17 @@ See the [OpenShell docs](https://github.com/NVIDIA/OpenShell) for the full secur
 ## Commands
 
 ```
-harness up [--remote] [--agent NAME] [-f FILE] [--name SANDBOX] [--provider-refresh]
+harness up [--local|--remote] [--agent NAME] [-f FILE] [--name SANDBOX] [--no-tty] [--provider-refresh]
     Deploy gateway + register providers + create sandbox.
     Defaults to local gateway (use --remote for OCP).
     --agent defaults to "default" (embedded or agents/default.yaml).
     -f renders any agent YAML file directly.
+    --no-tty disables TTY allocation.
     --provider-refresh deletes and recreates all providers.
 
 harness create [--agent NAME] [-f FILE] [--name SANDBOX]
     Create a sandbox without deploying the gateway.
     Assumes gateway is running. Auto-registers missing providers.
-
-harness connect [NAME]
-    Reconnect to a running sandbox.
 
 harness deploy [local|ocp|kind]
     Deploy or verify the gateway for a target.
@@ -297,14 +295,15 @@ harness deploy [local|ocp|kind]
 harness status
     Show sandbox status.
 
-harness logs [NAME] [-f]
-    Stream sandbox logs (-f to follow).
-
 harness stop [NAME] / harness start [NAME]
     Stop or start a sandbox without deleting it.
 
 harness teardown [--sandboxes] [--providers] [--k8s]
     Tear down resources. At least one flag required.
+
+For sandbox connect/logs, use openshell directly:
+    openshell sandbox connect [NAME]
+    openshell sandbox logs [NAME] [--follow]
 ```
 
 ## Documentation Map

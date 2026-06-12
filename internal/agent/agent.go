@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -97,23 +96,6 @@ func (c *AgentConfig) BuildEnvMap() map[string]string {
 		}
 	}
 	return env
-}
-
-func (c *AgentConfig) BuildEnvSh() string {
-	env := c.BuildEnvMap()
-	if len(env) == 0 {
-		return ""
-	}
-	keys := make([]string, 0, len(env))
-	for k := range env {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	var b strings.Builder
-	for _, k := range keys {
-		fmt.Fprintf(&b, "export %s=%q\n", k, env[k])
-	}
-	return b.String()
 }
 
 func (c *AgentConfig) BuildRunSh() string {

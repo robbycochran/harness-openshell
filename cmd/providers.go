@@ -47,7 +47,9 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool, provid
 	}
 
 	profilesDir := filepath.Join(harnessDir, "agents", "providers", "profiles")
-	gw.ProviderProfileImport(profilesDir)
+	if err := gw.ProviderProfileImport(profilesDir); err != nil {
+		status.Warnf("provider profile import: %v", err)
+	}
 
 	if _, ok := wanted["github"]; ok {
 		if err := registerStandard("github", "github", gw, nil); err != nil {
@@ -81,6 +83,28 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool, provid
 	}
 
 	return nil
+}
+
+func ensureProviders(harnessDir string, gw gateway.Gateway, agentCfg *agent.AgentConfig, forceRefresh bool) []string {
+	providerNames := agentCfg.ProviderNames()
+	if len(providerNames) == 0 {
+		return nil
+	}
+	registered, missing := gateway.ValidateProviders(providerNames, gw)
+	if len(missing) > 0 || forceRefresh {
+		if err := registerProviders(harnessDir, gw, forceRefresh, agentCfg.Providers); err != nil {
+			status.Warnf("provider registration: %v", err)
+		}
+		registered, missing = gateway.ValidateProviders(providerNames, gw)
+	}
+	status.Header("Providers")
+	for _, name := range registered {
+		status.OKf("%s: registered", name)
+	}
+	for _, name := range missing {
+		status.Failf("%s: not registered", name)
+	}
+	return registered
 }
 
 func registerStandard(name, profileType string, gw gateway.Gateway, configs []string) error {
@@ -119,7 +143,7 @@ func registerADC(name, profileType, model string, gw gateway.Gateway, configs []
 
 func registerGWS(harnessDir string, gw gateway.Gateway) error {
 	if gw.ProviderGet("gws") == nil {
-		status.Info("gws: exists (use --force to recreate)")
+		status.Info("gws: exists (use --provider-refresh to recreate)")
 		return nil
 	}
 

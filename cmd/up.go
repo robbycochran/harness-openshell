@@ -83,30 +83,6 @@ func NewUpCmd(harnessDir, cli string) *cobra.Command {
 	return cmd
 }
 
-func resolveAgentPath(harnessDir, agentName, agentFile string) string {
-	if agentFile != "" {
-		return agentFile
-	}
-	return filepath.Join(harnessDir, "agents", agentName+".yaml")
-}
-
-// resolveAgentConfig parses the agent config from disk, falling back to the
-// embedded default when the file does not exist and no explicit --file was given.
-func resolveAgentConfig(harnessDir, agentName, agentFile string) (*agent.AgentConfig, error) {
-	path := resolveAgentPath(harnessDir, agentName, agentFile)
-	cfg, err := agent.ParseFile(path)
-	if err == nil {
-		return cfg, nil
-	}
-	if agentFile != "" || agentName != "default" || len(DefaultAgentConfig) == 0 {
-		return nil, err
-	}
-	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
-		return nil, err
-	}
-	return agent.Parse(DefaultAgentConfig)
-}
-
 type upLocalOpts struct {
 	harnessDir      string
 	gw              gateway.Gateway
@@ -164,25 +140,7 @@ func upLocal(opts upLocalOpts) error {
 	}
 
 	// 3. Ensure providers needed by the agent are registered
-	providerNames := agentCfg.ProviderNames()
-	var registered []string
-	if len(providerNames) > 0 {
-		var missing []string
-		registered, missing = gateway.ValidateProviders(providerNames, gw)
-		if len(missing) > 0 || opts.providerRefresh {
-			if err := registerProviders(opts.harnessDir, gw, opts.providerRefresh, agentCfg.Providers); err != nil {
-				status.Warn(fmt.Sprintf("provider registration: %v", err))
-			}
-			registered, missing = gateway.ValidateProviders(providerNames, gw)
-		}
-		status.Header("Providers")
-		for _, name := range registered {
-			status.OKf("%s", name)
-		}
-		for _, name := range missing {
-			status.Failf("%s (not registered)", name)
-		}
-	}
+	registered := ensureProviders(opts.harnessDir, gw, agentCfg, opts.providerRefresh)
 
 	// 4. Render payload
 	payloadDir, err := os.MkdirTemp("", "harness-payload-")
@@ -223,10 +181,3 @@ var Version = "dev"
 // DefaultAgentConfig holds the embedded default agent YAML, set from main.go.
 var DefaultAgentConfig []byte
 
-func versionedImage(name string) string {
-	base := "ghcr.io/robbycochran/harness-openshell"
-	if Version == "" || Version == "dev" {
-		return base + ":" + name
-	}
-	return base + ":" + name + "-" + Version
-}

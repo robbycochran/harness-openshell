@@ -49,11 +49,9 @@ func main() {
 	root.AddCommand(
 		cmd.NewUpCmd(harnessDir, cli),
 		cmd.NewCreateCmd(harnessDir, cli),
-		cmd.NewConnectCmd(cli),
 		cmd.NewDeployCmd(harnessDir, cli),
 		cmd.NewTeardownCmd(harnessDir, cli),
 		cmd.NewStatusCmd(harnessDir, cli),
-		cmd.NewLogsCmd(harnessDir, cli),
 		cmd.NewStopCmd(harnessDir, cli),
 		cmd.NewStartCmd(harnessDir, cli),
 	)

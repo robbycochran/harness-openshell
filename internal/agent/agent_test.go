@@ -141,44 +141,6 @@ func TestNoTTY(t *testing.T) {
 	}
 }
 
-func TestBuildEnvSh(t *testing.T) {
-	cfg := &AgentConfig{
-		Env: map[string]string{
-			"ANTHROPIC_BASE_URL": "https://inference.local",
-			"ANTHROPIC_API_KEY":  "sk-proxy",
-		},
-	}
-	env := cfg.BuildEnvSh()
-	if !strings.Contains(env, `export ANTHROPIC_BASE_URL="https://inference.local"`) {
-		t.Errorf("missing ANTHROPIC_BASE_URL in:\n%s", env)
-	}
-}
-
-func TestBuildEnvSh_Empty(t *testing.T) {
-	cfg := &AgentConfig{Providers: []ProviderRef{{Profile: "github"}}}
-	if env := cfg.BuildEnvSh(); env != "" {
-		t.Errorf("expected empty env.sh, got:\n%s", env)
-	}
-}
-
-func TestBuildEnvSh_IncludesProviderEnv(t *testing.T) {
-	cfg := &AgentConfig{
-		Env: map[string]string{
-			"ANTHROPIC_BASE_URL": "https://inference.local",
-		},
-		Providers: []ProviderRef{
-			{Profile: "atlassian", Env: map[string]string{"JIRA_URL": "https://jira.example.com"}},
-		},
-	}
-	env := cfg.BuildEnvSh()
-	if !strings.Contains(env, `ANTHROPIC_BASE_URL`) {
-		t.Errorf("missing top-level env var in:\n%s", env)
-	}
-	if !strings.Contains(env, `JIRA_URL`) {
-		t.Errorf("missing provider env var in:\n%s", env)
-	}
-}
-
 func TestBuildEnvMap_IncludesProviderEnv(t *testing.T) {
 	t.Setenv("JIRA_URL", "https://test.atlassian.net")
 	cfg := &AgentConfig{
@@ -301,18 +263,6 @@ func TestBuildEnvMap_Empty(t *testing.T) {
 	env := cfg.BuildEnvMap()
 	if len(env) != 0 {
 		t.Errorf("expected empty map, got %v", env)
-	}
-}
-
-func TestBuildEnvSh_Sorted(t *testing.T) {
-	cfg := &AgentConfig{
-		Env: map[string]string{"Z_VAR": "z", "A_VAR": "a"},
-	}
-	env := cfg.BuildEnvSh()
-	aIdx := strings.Index(env, "A_VAR")
-	zIdx := strings.Index(env, "Z_VAR")
-	if aIdx > zIdx {
-		t.Error("env.sh should be sorted alphabetically")
 	}
 }
 

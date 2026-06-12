@@ -100,17 +100,6 @@ func (c *GatewayConfig) IsOCP() bool {
 	return c.Gateway.Platform == "ocp"
 }
 
-func (c *GatewayConfig) HasProviders() bool {
-	return len(c.Providers.Enabled) > 0 || len(c.Providers.Custom) > 0
-}
-
-func (c *GatewayConfig) AllProviders() []string {
-	all := make([]string, 0, len(c.Providers.Enabled)+len(c.Providers.Custom))
-	all = append(all, c.Providers.Enabled...)
-	all = append(all, c.Providers.Custom...)
-	return all
-}
-
 func (c *GatewayConfig) HelmValuesPath() string {
 	if c.Helm.Values == "" {
 		return ""

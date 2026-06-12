@@ -32,9 +32,9 @@ func NewTeardownCmd(harnessDir, cli string) *cobra.Command {
 			activeGW := gw.ActiveGateway()
 
 			if activeGW != "" {
-				fmt.Printf("Active gateway: %s\n", activeGW)
+				status.Infof("Active gateway: %s", activeGW)
 			} else {
-				fmt.Println("Active gateway: none")
+				status.Info("Active gateway: none")
 			}
 			fmt.Println()
 

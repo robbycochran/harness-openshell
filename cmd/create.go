@@ -54,24 +54,10 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 			status.Infof("Image: %s", sandboxImage)
 
 			// 3. Ensure providers are registered
-			status.Header("Providers")
-			providerNames := agentCfg.ProviderNames()
-			registered, missing := gateway.ValidateProviders(providerNames, gw)
-			if len(missing) > 0 {
-				if err := registerProviders(harnessDir, gw, false, agentCfg.Providers); err != nil {
-					status.Warn(fmt.Sprintf("provider registration: %v", err))
-				}
-				registered, missing = gateway.ValidateProviders(providerNames, gw)
-			}
-			for _, n := range registered {
-				status.OKf("%s: attached", n)
-			}
-			for _, n := range missing {
-				status.Failf("%s: not registered", n)
-			}
+			registered := ensureProviders(harnessDir, gw, agentCfg, false)
 
 			// 4. Deploy the sandbox
-			status.Header("Creating sandbox")
+			status.Header("Sandbox")
 			payloadDir, err := os.MkdirTemp("", "harness-payload-")
 			if err != nil {
 				return fmt.Errorf("creating payload dir: %w", err)
@@ -95,7 +81,7 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 				env:        agentCfg.BuildEnvMap(),
 				onSuccess: func(n string) {
 					fmt.Println()
-					status.OKf("Sandbox created: %s — connect with: harness connect %s", n, n)
+					status.OKf("Sandbox created: %s — connect with: openshell sandbox connect %s", n, n)
 				},
 			})
 		},
