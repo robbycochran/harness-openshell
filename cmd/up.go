@@ -167,7 +167,7 @@ func upLocal(opts upLocalOpts) error {
 		var missing []string
 		registered, missing = gateway.ValidateProviders(providerNames, gw)
 		if len(missing) > 0 || opts.providerRefresh {
-			if err := registerProviders(opts.harnessDir, gw, opts.providerRefresh, opts.gwCfg, false); err != nil {
+			if err := registerProviders(opts.harnessDir, gw, opts.providerRefresh, providerNames); err != nil {
 				status.Warn(fmt.Sprintf("provider registration: %v", err))
 			}
 			registered, missing = gateway.ValidateProviders(providerNames, gw)

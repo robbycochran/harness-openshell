@@ -13,41 +13,27 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// registerProviders registers providers with the gateway. If gwCfg is non-nil
-// and has a [providers] section, only providers in that list are registered.
-// Otherwise all providers are registered (backward-compatible behavior).
-func registerProviders(harnessDir string, gw gateway.Gateway, force bool, gwCfg *gateway.GatewayConfig, standalone bool) error {
+// registerProviders registers the providers listed in providerNames with the
+// gateway. Only providers in the list are registered — the agent YAML is
+// the source of truth.
+func registerProviders(harnessDir string, gw gateway.Gateway, force bool, providerNames []string) error {
 	model := envOr("OPENSHELL_MODEL", "claude-sonnet-4-6")
 
-	// Build the set of enabled provider names from gateway config (if available)
-	var enabledSet map[string]bool
-	if gwCfg != nil && gwCfg.HasProviders() {
-		enabledSet = make(map[string]bool)
-		for _, name := range gwCfg.AllProviders() {
-			enabledSet[name] = true
-		}
+	wanted := make(map[string]bool, len(providerNames))
+	for _, n := range providerNames {
+		wanted[n] = true
 	}
 
-	providerEnabled := func(name string) bool {
-		if enabledSet == nil {
-			return true
-		}
-		return enabledSet[name]
-	}
-
-	// Force mode: require no running sandboxes
 	if force {
 		sandboxes, err := gw.SandboxList()
 		if err != nil {
 			return fmt.Errorf("listing sandboxes: %w", err)
 		}
 		if len(sandboxes) > 0 {
-			return fmt.Errorf("cannot --force with running sandboxes — delete them first")
+			return fmt.Errorf("cannot --provider-refresh with running sandboxes — delete them first")
 		}
-		for _, name := range []string{"github", "vertex-local", "atlassian", "gws"} {
-			if providerEnabled(name) {
-				gw.ProviderDelete(name)
-			}
+		for _, name := range providerNames {
+			gw.ProviderDelete(name)
 		}
 		deleteCustomProfiles(harnessDir, gw)
 		status.Info("Deleted existing providers")
@@ -55,25 +41,22 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool, gwCfg 
 
 	status.Header("Providers")
 
-	// Enable providers v2
 	if err := gw.SettingsSet("providers_v2_enabled", "true"); err != nil {
 		return fmt.Errorf("enabling providers v2: %w", err)
 	}
 
-	// Import custom profiles
 	profilesDir := filepath.Join(harnessDir, "agents", "providers", "profiles")
 	gw.ProviderProfileImport(profilesDir)
 
-	home, _ := os.UserHomeDir()
-	adcPath := envOr("GOOGLE_APPLICATION_CREDENTIALS",
-		filepath.Join(home, ".config", "gcloud", "application_default_credentials.json"))
-	project := envOr("ANTHROPIC_VERTEX_PROJECT_ID", readADCProject(adcPath))
-	region := envOr("CLOUD_ML_REGION", "global")
-
-	if providerEnabled("github") {
+	if wanted["github"] {
 		registerStandard("github", "github", gw, nil)
 	}
-	if providerEnabled("vertex-local") {
+	if wanted["vertex-local"] {
+		home, _ := os.UserHomeDir()
+		adcPath := envOr("GOOGLE_APPLICATION_CREDENTIALS",
+			filepath.Join(home, ".config", "gcloud", "application_default_credentials.json"))
+		project := envOr("ANTHROPIC_VERTEX_PROJECT_ID", readADCProject(adcPath))
+		region := envOr("CLOUD_ML_REGION", "global")
 		var vertexConfigs []string
 		if project != "" {
 			vertexConfigs = append(vertexConfigs, "VERTEX_AI_PROJECT_ID="+project)
@@ -81,28 +64,15 @@ func registerProviders(harnessDir string, gw gateway.Gateway, force bool, gwCfg 
 		vertexConfigs = append(vertexConfigs, "VERTEX_AI_REGION="+region)
 		registerADC("vertex-local", "google-vertex-ai", model, gw, vertexConfigs)
 	}
-	if providerEnabled("atlassian") {
+	if wanted["atlassian"] {
 		registerStandard("atlassian", "atlassian", gw, nil)
 	}
-	if err := registerGWS(harnessDir, gw, providerEnabled); err != nil {
-		return err
+	if wanted["gws"] {
+		if err := registerGWS(harnessDir, gw); err != nil {
+			return err
+		}
 	}
 
-	if standalone {
-		names, err := gw.ProviderList()
-		if err != nil {
-			return fmt.Errorf("listing providers: %w", err)
-		}
-		fmt.Println()
-		for _, n := range names {
-			status.OK(n)
-		}
-		m := gw.InferenceModel()
-		if m != "" {
-			status.OKf("Inference: %s", m)
-		}
-		status.Done("Done. Launch a sandbox with: harness up --local")
-	}
 	return nil
 }
 
@@ -141,11 +111,7 @@ func registerADC(name, profileType, model string, gw gateway.Gateway, configs []
 	status.OKf("inference: model %s", model)
 }
 
-func registerGWS(harnessDir string, gw gateway.Gateway, enabled func(string) bool) error {
-	if !enabled("gws") {
-		status.Info("gws: disabled by gateway config")
-		return nil
-	}
+func registerGWS(harnessDir string, gw gateway.Gateway) error {
 	if gw.ProviderGet("gws") == nil {
 		status.Info("gws: exists (use --force to recreate)")
 		return nil
