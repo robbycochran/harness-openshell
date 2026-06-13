@@ -38,10 +38,6 @@
 #   GWS config could be provider-managed and the CLI could move to a
 #   community sandbox.
 #
-# startup.sh: Baked into the image to wire runtime credentials (Atlassian
-#   MCP config, GWS file placement). See sandbox.sh for the specific
-#   workarounds and their upstream tracking issues.
-
 ARG BASE_IMAGE=ghcr.io/nvidia/openshell-community/sandboxes/base:latest
 FROM ${BASE_IMAGE}
 
@@ -66,27 +62,16 @@ RUN npm install -g opencode-ai@latest
 COPY policy.yaml /etc/openshell/policy.yaml
 
 # Agent instructions + config (Claude Code + OpenCode)
-COPY CLAUDE.md /sandbox/CLAUDE.md
+COPY CLAUDE.md /sandbox/.claude/CLAUDE.md
 COPY settings.json /sandbox/.claude/settings.json
 COPY claude.json /sandbox/.claude.json
 COPY mcp.json /sandbox/.mcp.json
 COPY opencode.json /sandbox/opencode.json
 
-# Runtime script
-COPY startup.sh /sandbox/startup.sh
-
-# Claude wrapper: move the real binary aside, install wrapper in its place.
-# The base image puts claude at /usr/local/bin/claude; we move it to
-# /usr/local/lib/claude-real so the wrapper can call it.
-RUN mv /usr/local/bin/claude /usr/local/lib/claude-real
-COPY bin/claude /usr/local/bin/claude
-
 # Harness config directory (populated at runtime via upload)
 RUN mkdir -p /sandbox/.config/openshell && chown sandbox:sandbox /sandbox/.config/openshell
 
-RUN chmod 755 /usr/local/bin/claude && \
-    chmod +x /sandbox/startup.sh && \
-    chown -R sandbox:sandbox /sandbox/.claude /sandbox/.claude.json /sandbox/.mcp.json /sandbox/opencode.json /sandbox/.config /sandbox/CLAUDE.md /sandbox/startup.sh
+RUN chown -R sandbox:sandbox /sandbox/.claude /sandbox/.claude.json /sandbox/.mcp.json /sandbox/opencode.json /sandbox/.config
 
 USER sandbox
 
