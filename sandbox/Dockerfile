@@ -66,7 +66,7 @@ RUN npm install -g opencode-ai@latest
 COPY policy.yaml /etc/openshell/policy.yaml
 
 # Agent instructions + config (Claude Code + OpenCode)
-COPY CLAUDE.md /sandbox/CLAUDE.md
+COPY CLAUDE.md /sandbox/.claude/CLAUDE.md
 COPY settings.json /sandbox/.claude/settings.json
 COPY claude.json /sandbox/.claude.json
 COPY mcp.json /sandbox/.mcp.json
@@ -79,7 +79,7 @@ COPY startup.sh /sandbox/startup.sh
 RUN mkdir -p /sandbox/.config/openshell && chown sandbox:sandbox /sandbox/.config/openshell
 
 RUN chmod +x /sandbox/startup.sh && \
-    chown -R sandbox:sandbox /sandbox/.claude /sandbox/.claude.json /sandbox/.mcp.json /sandbox/opencode.json /sandbox/.config /sandbox/CLAUDE.md /sandbox/startup.sh
+    chown -R sandbox:sandbox /sandbox/.claude /sandbox/.claude.json /sandbox/.mcp.json /sandbox/opencode.json /sandbox/.config /sandbox/startup.sh
 
 USER sandbox
 
