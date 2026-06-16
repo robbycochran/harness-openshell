@@ -36,10 +36,11 @@ func NewUpCmd(harnessDir, cli string) *cobra.Command {
 				sandboxName = args[0]
 			}
 
-			agentCfg, err := resolveAgentConfig(harnessDir, agentName, agentProfile)
+			harness, err := resolveHarness(harnessDir, agentName, agentProfile)
 			if err != nil {
 				return err
 			}
+			agentCfg := harness.Agent
 			agentPath := resolveAgentPath(harnessDir, agentName, agentProfile)
 
 			gw := gateway.New(cli)
@@ -63,7 +64,7 @@ func NewUpCmd(harnessDir, cli string) *cobra.Command {
 						gwTarget = "local"
 					}
 				}
-				gwCfg, _ = resolveGatewayConfig(harnessDir, gwTarget)
+				gwCfg, _ = resolveGatewayConfigWithHarness(harnessDir, gwTarget, harness)
 			}
 			isRemote := gwTarget != "local"
 
@@ -77,6 +78,7 @@ func NewUpCmd(harnessDir, cli string) *cobra.Command {
 				sandboxName:     sandboxName,
 				noTTY:           noTTY,
 				providerRefresh: providerRefresh,
+				harness:         harness,
 				retrySleep:      5 * time.Second,
 			})
 		},
@@ -103,6 +105,7 @@ type upLocalOpts struct {
 	sandboxName     string
 	noTTY           bool
 	providerRefresh bool
+	harness         *agent.Harness
 	retrySleep      time.Duration
 }
 
@@ -150,7 +153,7 @@ func upLocal(opts upLocalOpts) error {
 	}
 
 	// 3. Ensure providers needed by the agent are registered
-	registered := ensureProviders(opts.harnessDir, gw, agentCfg, opts.providerRefresh)
+	registered := ensureProviders(opts.harnessDir, gw, agentCfg, opts.providerRefresh, opts.harness)
 
 	// 4. Render payload
 	payloadDir, err := os.MkdirTemp("", "harness-payload-")

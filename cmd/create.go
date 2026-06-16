@@ -27,10 +27,11 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 				sandboxName = args[0]
 			}
 
-			agentCfg, err := resolveAgentConfig(harnessDir, agentName, agentProfile)
+			harness, err := resolveHarness(harnessDir, agentName, agentProfile)
 			if err != nil {
 				return err
 			}
+			agentCfg := harness.Agent
 
 			gw := gateway.New(cli)
 
@@ -54,7 +55,7 @@ func NewCreateCmd(harnessDir, cli string) *cobra.Command {
 			status.Infof("Image: %s", sandboxImage)
 
 			// 3. Ensure providers are registered
-			registered := ensureProviders(harnessDir, gw, agentCfg, false)
+			registered := ensureProviders(harnessDir, gw, agentCfg, false, harness)
 
 			// 4. Deploy the sandbox
 			status.Header("Sandbox")

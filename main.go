@@ -68,6 +68,7 @@ func main() {
 		cmd.NewStatusCmd(harnessDir, cli),
 		cmd.NewStopCmd(harnessDir, cli),
 		cmd.NewStartCmd(harnessDir, cli),
+		cmd.NewRenderCmd(harnessDir, cli),
 	)
 
 	if err := root.Execute(); err != nil {

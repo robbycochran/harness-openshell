@@ -58,11 +58,11 @@ func findFile(root, name string) (string, error) {
 	return match, err
 }
 
-func resolveAgentConfig(harnessDir, agentName, agentFile string) (*agent.AgentConfig, error) {
+func resolveHarness(harnessDir, agentName, agentFile string) (*agent.Harness, error) {
 	path := resolveAgentPath(harnessDir, agentName, agentFile)
-	cfg, err := agent.ParseFile(path)
+	h, err := agent.ParseHarnessFile(path)
 	if err == nil {
-		return cfg, nil
+		return h, nil
 	}
 	if agentFile != "" || agentName != "default" || len(DefaultAgentConfig) == 0 {
 		return nil, err
@@ -70,7 +70,24 @@ func resolveAgentConfig(harnessDir, agentName, agentFile string) (*agent.AgentCo
 	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
 		return nil, err
 	}
-	return agent.Parse(DefaultAgentConfig)
+	return agent.ParseHarness(DefaultAgentConfig)
+}
+
+func resolveAgentConfig(harnessDir, agentName, agentFile string) (*agent.AgentConfig, error) {
+	h, err := resolveHarness(harnessDir, agentName, agentFile)
+	if err != nil {
+		return nil, err
+	}
+	return h.Agent, nil
+}
+
+func resolveGatewayConfigWithHarness(harnessDir, name string, h *agent.Harness) (*gateway.GatewayConfig, error) {
+	if h != nil {
+		if data, ok := h.Gateways[name]; ok {
+			return gateway.LoadConfigFromBytes(data)
+		}
+	}
+	return resolveGatewayConfig(harnessDir, name)
 }
 
 func versionedImage(name string) string {
