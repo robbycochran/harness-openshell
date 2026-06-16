@@ -83,6 +83,16 @@
 - Goal: `harness up -f agent.yaml` with one file. Zero to working sandboxed agent.
 - Existing single-document agent YAMLs (no `kind` field) continue to work unchanged
 
+### `harness render` as live config snapshot
+- [ ] `harness render` queries the running gateway for effective state, not just YAML files
+- Outputs what is actually configured: registered providers, active gateway, inference
+  config, sandbox policy, env structure
+- Credentials replaced with `${VAR}` placeholders -- the snapshot is shareable
+- Replay with different creds: `GITHUB_TOKEN=theirs harness up -f snapshot.yaml`
+- Like `kubectl get -o yaml` -- captures the running shape, not the source config
+- Round-trip: `harness render > snapshot.yaml && harness up -f snapshot.yaml` should
+  reproduce the same agent setup (with different credentials from env)
+
 ### Future fields
 - [ ] `description` -- one line of human-readable context per agent config
 - [ ] `repo` -- git URL to clone into the sandbox at start
