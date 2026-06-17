@@ -6,7 +6,7 @@ Behavior specification for the OpenShell Harness CLI.
 
 The harness deploys and manages AI agent sandboxes on three targets:
 - **local-container** -- Podman containers via a local OpenShell gateway
-- **helm** -- Kubernetes pods via a kind cluster (NodePort access)
+- **helm** -- Kubernetes pods via a k8s cluster (NodePort access)
 - **openshift** -- Kubernetes pods via an OpenShift-hosted OpenShell gateway (Route access)
 
 Each sandbox is an isolated container running an agent entrypoint (Claude Code or OpenCode), with credential providers, network policies, and a rendered payload (run.sh, task.md).
