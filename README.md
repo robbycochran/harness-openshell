@@ -231,6 +231,7 @@ Each integration target builds (and pushes, for remote) the sandbox image automa
 - **GitHub Action** -- run harness tasks in CI (review PRs, enforce standards, generate reports)
 - **Observability** -- structured telemetry export (Langfuse, MLflow, OpenTelemetry) for agent tool calls, token usage, and policy decisions
 - **Skills integration** -- first-class support for community skill packs (e.g., [awesome-omni-skills](https://github.com/diegosouzapw/awesome-omni-skills)) as task inputs
+- **OpenShell plugin** -- register the harness as an `openshell` CLI plugin so `openshell harness apply` works natively alongside other openshell commands
 - **Linux validation** -- CI and local testing on Linux (currently macOS-only)
 
 ## Documentation
