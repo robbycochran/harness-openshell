@@ -1,29 +1,34 @@
 # harness
 
-Declarative configuration harness for [OpenShell](https://github.com/NVIDIA/OpenShell) AI agent sandboxes.
+> **Experimental.** This is a workflow tool built on top of [OpenShell](https://github.com/NVIDIA/OpenShell), which is itself alpha software. Expect breaking changes in both.
+
+Declarative configuration and deployment harness for OpenShell AI agent sandboxes.
 
 ```bash
-harness init              # generate a config
-harness doctor            # check your environment
-harness apply -f harness.yaml   # launch a sandbox
+harness init                        # generate a config
+harness doctor                      # check your environment
+harness apply -f harness.yaml       # launch a sandbox
 ```
 
-## OpenShell provides the runtime
+## Why this exists
 
-[OpenShell](https://github.com/NVIDIA/OpenShell) runs AI agents in sandboxed containers with deny-by-default L7 network policy, credential proxy at the network boundary, Landlock filesystem isolation, and inference routing. The harness does not replace any of this.
+OpenShell provides the sandbox runtime: deny-by-default L7 network policy, credential proxy at the network boundary, Landlock filesystem isolation, and inference routing. It is designed as a foundation layer -- a strict, secure base that other tooling builds workflows on top of.
 
-## The harness adds declarative configuration
+The harness is one such workflow layer. It explores what a declarative, multi-target deployment experience looks like for teams running AI agent sandboxes across local development (Podman) and Kubernetes (kind, OpenShift).
+
+OpenShell's upstream direction is toward a [Kubernetes Operator model](https://github.com/NVIDIA/OpenShell/issues/1719) where providers and sandboxes become CRDs, the gateway narrows to a data-plane relay, and control-plane concerns move into the operator. That operator will cover K8s deployments. The harness covers the workflow layer that sits above it -- and the local Podman path that no operator will own.
+
+### What the harness provides
 
 - **Guided setup** -- `harness init` generates a config, `harness doctor` validates your environment
-- **One-file agent definition** -- agent, providers, gateway, policy, and sandbox files in a single YAML
-- **Multi-document YAML** -- `kind: agent/provider/gateway/payload/policy` composed in one file
-- **Payload files** -- upload configs to sandbox paths without rebuilding the image
-- **Headless task mode** -- `--task "do something"` runs the agent and outputs to stdout
-- **Multi-target deploy** -- same YAML works on local Podman, kind, and OpenShell
-- **Dry-run validation** -- `--dry-run` checks everything before deploying
-- **Config inspection** -- `-o yaml` outputs the fully resolved config
+- **One-file agent definition** -- agent, providers, gateway, and policy in a single YAML
+- **Multi-target deploy** -- same config works on local Podman, kind, and OpenShift
+- **Automated provider registration** -- discovers credentials from your host environment (ADC, env vars, OAuth tokens) and registers them with the gateway
+- **Payload files** -- upload configs (CLAUDE.md, MCP settings, policies) to sandbox paths without rebuilding images
+- **Headless task mode** -- `--task "do something"` runs the agent non-interactively
+- **Dry-run and inspection** -- `--dry-run` validates without deploying, `-o yaml` outputs the resolved config
 
-## Use OpenShell directly for runtime operations
+### What to use OpenShell directly for
 
 ```bash
 openshell sandbox connect <name>     # interactive shell
@@ -32,7 +37,7 @@ openshell sandbox logs <name>        # view logs
 openshell policy get <name>          # inspect policy
 ```
 
-The harness handles setup. OpenShell handles the runtime.
+The harness handles setup and deployment. OpenShell handles the runtime.
 
 ## Install
 

@@ -62,11 +62,19 @@
 - Prerequisite: proto files stabilize (OpenShell is alpha)
 
 ### Upstream issues to track
-- #1719 -- K8s Operator design (affects provider CRDs)
+- #1719 -- K8s Operator design (providers as CRDs, gateway narrows to data-plane)
 - #1851 -- Plugin system (affects binary naming)
-- #1886 -- Declarative provider config in gateway.toml
+- #1886 -- Declarative provider config in gateway.toml (core team rejected; redirected to #1719)
+- #1520 -- Sandbox specs / apply -f (stale, no maintainer engagement)
+- #1814 -- Named sandbox templates (no comments, blocked on #863)
 - #1922 -- Portable sandbox log collection
 - #1933 -- Centralized audit/event log
+
+Upstream direction signal (as of 2026-06): the gateway stays a strict foundation
+layer. Provider lifecycle and sandbox declaration are moving toward the operator/CRD
+model for K8s. johntmyers mentioned hooks/middleware for API calls coming soon.
+The harness's provider registration and multi-document YAML have no upstream
+replacement on the current roadmap.
 
 ## Observability & Tracing
 
