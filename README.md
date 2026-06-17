@@ -98,8 +98,8 @@ providers:
   - profile: google-vertex-ai
   - profile: atlassian
     env:
-      JIRA_URL: ${JIRA_URL}
-      JIRA_USERNAME: ${JIRA_USERNAME}
+      JIRA_URL:
+      JIRA_USERNAME:
 
 env:
   ANTHROPIC_BASE_URL: https://inference.local
