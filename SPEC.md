@@ -122,8 +122,6 @@ Delete sandboxes by name, or use flags for bulk operations. `--all` deletes sand
 
 Deploy or verify the gateway for a target. Reads `profiles/gateways/<target>.yaml`.
 
-
-
 ### Deprecated Aliases
 
 These commands still work but will be removed in a future release:
