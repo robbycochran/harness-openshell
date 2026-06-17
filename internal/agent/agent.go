@@ -259,11 +259,10 @@ func RenderHarness(h *Harness, builtinProviders map[string][]byte) ([]byte, erro
 }
 
 func expandEnvVar(key, value string) string {
-	expanded := os.ExpandEnv(value)
-	if expanded == "" {
-		expanded = os.Getenv(key)
+	if value == "" {
+		return os.Getenv(key)
 	}
-	return expanded
+	return os.ExpandEnv(value)
 }
 
 func (c *AgentConfig) BuildEnvMap() map[string]string {

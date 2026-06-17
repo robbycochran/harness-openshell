@@ -46,6 +46,8 @@ then deploy a sandbox. Use --dry-run to validate without deploying, or
 			agentCfg := harness.Agent
 			agentPath := resolveAgentPath(harnessDir, agentName, file)
 
+			status.Infof("Config: %s", agentPath)
+
 			// Resolve output modes before touching the gateway
 			if output == "yaml" || output == "json" {
 				return renderOutput(harnessDir, harness, output)

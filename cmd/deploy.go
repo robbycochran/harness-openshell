@@ -139,7 +139,7 @@ func deployLocal(gw gateway.Gateway) error {
 func deployFromConfig(harnessDir string, gwCfg *gateway.GatewayConfig, gw gateway.Gateway, kc, clusterRunner k8s.Runner) (retErr error) {
 	defer func() {
 		if retErr != nil {
-			fmt.Fprintf(os.Stderr, "\nDeploy failed. Clean up with: harness teardown --k8s\n")
+			fmt.Fprintf(os.Stderr, "\nDeploy failed. Clean up with: harness delete --k8s\n")
 		}
 	}()
 	ctx := context.Background()

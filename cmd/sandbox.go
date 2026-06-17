@@ -56,8 +56,8 @@ func createSandbox(opts sandboxOpts) error {
 		return fmt.Errorf("staging payload: %w", err)
 	}
 
-	// Create sandbox with retry loop (up to 5 attempts).
-	for attempt := 1; attempt <= 5; attempt++ {
+	const maxRetries = 5
+	for attempt := 1; attempt <= maxRetries; attempt++ {
 		uploads := []gateway.Upload{{Src: uploadDir, Dst: "/sandbox/.config"}}
 		uploads = append(uploads, opts.uploads...)
 
@@ -78,10 +78,10 @@ func createSandbox(opts sandboxOpts) error {
 			return nil
 		}
 
-		status.Warnf("attempt %d: %v, retrying in 5s", attempt, err)
+		status.Warnf("attempt %d: %v, retrying in %s", attempt, err, opts.retrySleep)
 		opts.gw.SandboxDelete(opts.name) // best-effort cleanup
 
-		if attempt == 5 {
+		if attempt == maxRetries {
 			return fmt.Errorf("sandbox create failed after 5 attempts: %w", err)
 		}
 		time.Sleep(opts.retrySleep)
