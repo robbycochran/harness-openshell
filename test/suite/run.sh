@@ -337,18 +337,31 @@ if $LIVE && "$CLI" inference get >/dev/null 2>&1; then
       fi
     else
       skip_test "agent: claude inference via vertex" "sandbox not ready"
+      skip_test "agent: opencode inference via vertex" "sandbox not ready"
       skip_test "agent: github via gh cli" "sandbox not ready"
       skip_test "agent: claude uses jira mcp" "sandbox not ready"
       skip_test "agent: gws gmail via proxy token" "sandbox not ready"
+      skip_test "agent: opencode built-in profile" "sandbox not ready"
     fi
 
-    "$HARNESS" delete test-agent-int >/dev/null 2>&1 || true
+    # Test the built-in opencode profile (--agent opencode) with all providers.
+    # Verifies the shipped profile works end-to-end with Vertex via inference.local/v1.
+    SANDBOXES_TO_CLEAN+=(test-oc-builtin)
+    run_test "agent: opencode built-in profile" \
+      bash -c '"$1" apply --agent opencode --name test-oc-builtin >/dev/null 2>&1 && \
+        for i in $(seq 1 10); do "$1" describe test-oc-builtin >/dev/null 2>&1 && break; sleep 0.5; done && \
+        result=$("$2" sandbox exec --name test-oc-builtin -- bash -c "opencode run \"respond with ok\" 2>&1") && \
+        test -n "$result"' _ "$HARNESS" "$CLI"
+
+    "$HARNESS" delete test-agent-int test-opencode-int test-oc-builtin >/dev/null 2>&1 || true
     "$HARNESS" delete --sandboxes --providers >/dev/null 2>&1 || true
   else
     skip_test "agent: claude inference via vertex" "ANTHROPIC_VERTEX_PROJECT_ID not set"
+    skip_test "agent: opencode inference via vertex" "ANTHROPIC_VERTEX_PROJECT_ID not set"
     skip_test "agent: github via gh cli" "ANTHROPIC_VERTEX_PROJECT_ID not set"
     skip_test "agent: claude uses jira mcp" "ANTHROPIC_VERTEX_PROJECT_ID not set"
     skip_test "agent: gws gmail via proxy token" "ANTHROPIC_VERTEX_PROJECT_ID not set"
+    skip_test "agent: opencode built-in profile" "ANTHROPIC_VERTEX_PROJECT_ID not set"
   fi
 
   echo ""
