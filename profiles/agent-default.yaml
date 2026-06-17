@@ -1,8 +1,8 @@
-# Default agent configuration.
+# Default agent configuration (Claude Code).
 #
 # Usage:
-#   harness up                         # uses profiles/agent-default.yaml
-#   harness up --agent research        # uses profiles/agent-research.yaml
+#   harness apply                      # uses this config
+#   harness apply --agent opencode     # uses agent-opencode.yaml
 
 name: agent
 entrypoint: claude
@@ -17,9 +17,19 @@ providers:
       JIRA_USERNAME: ${JIRA_USERNAME}
   - profile: gws
 
-# Non-secret env vars injected into sandbox.
-# Proxy config: gateway routes inference through its local proxy.
 env:
   ANTHROPIC_BASE_URL: https://inference.local
   ANTHROPIC_API_KEY: sk-ant-openshell-proxy-managed
   CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1"
+
+payloads:
+  - path: /sandbox/.claude/CLAUDE.md
+    file: profiles/images/sandbox-default/CLAUDE.md
+  - path: /sandbox/.claude.json
+    file: profiles/images/sandbox-default/claude.json
+  - path: /sandbox/.claude/settings.json
+    file: profiles/images/sandbox-default/settings.json
+  - path: /sandbox/.mcp.json
+    file: profiles/images/sandbox-default/mcp.json
+  - path: /etc/openshell/policy.yaml
+    file: profiles/images/sandbox-default/policy.yaml
