@@ -21,6 +21,41 @@ harness apply -f harness.yaml --task "review this codebase for security issues"
 harness apply -f harness.yaml --task @skills/cpp-pro/SKILL.md
 ```
 
+### Clone a repo into the sandbox
+
+The `repo` field clones a repository outside the sandbox and uploads it. Git credentials never enter the sandbox.
+
+```yaml
+name: reviewer
+repo: https://github.com/stackrox/collector
+entrypoint: claude
+task: "identify the highest-priority C++ remediation"
+```
+
+```bash
+harness apply -f reviewer.yaml --task "focus on RAII and move semantics"
+```
+
+### Getting results out
+
+The agent runs in an isolated sandbox. To extract results:
+
+```bash
+# Agent outputs to stdout (--task mode)
+harness apply -f harness.yaml --task "summarize the codebase" > results.md
+
+# Pull a specific file from the sandbox
+openshell sandbox exec <name> -- cat /sandbox/collector/report.md > report.md
+
+# Extract a diff
+openshell sandbox exec <name> -- git -C /sandbox/collector diff > changes.patch
+
+# Download files
+openshell sandbox exec <name> -- tar czf - /sandbox/collector/output/ > output.tar.gz
+```
+
+If the `github` provider is attached, the agent can push directly -- the proxy provides a scoped `GITHUB_TOKEN` without exposing raw credentials.
+
 ### Coding agent
 
 Launch an interactive coding session with Claude Code or OpenCode.
@@ -52,6 +87,7 @@ A single file defines what runs, what credentials it gets, and what files are up
 name: agent
 entrypoint: claude
 tty: true
+repo: https://github.com/stackrox/collector   # cloned outside sandbox, uploaded in
 
 providers:
   - profile: github
