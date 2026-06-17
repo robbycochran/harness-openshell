@@ -1,21 +1,34 @@
 # harness
 
-Deploy a fully sandboxed AI agent in one command.
+Declarative configuration harness for [OpenShell](https://github.com/NVIDIA/OpenShell) AI agent sandboxes.
 
 ```bash
 harness apply -f agent.yaml
 ```
 
-One file defines your agent, providers, gateway, and policy. The harness resolves credentials, deploys the gateway, registers providers, and launches a sandbox with deny-by-default L7 egress. Works on local Podman and remote Kubernetes/OpenShift with the same config.
+## OpenShell provides the runtime
 
-## What You Get
+[OpenShell](https://github.com/NVIDIA/OpenShell) runs AI agents in sandboxed containers with deny-by-default L7 network policy, credential proxy at the network boundary, Landlock filesystem isolation, and inference routing. The harness does not replace any of this.
 
-- **Sandbox isolation** -- every agent runs in a container with Landlock filesystem restrictions and deny-by-default network policy
-- **Credential proxy** -- secrets are resolved at the gateway boundary, never exposed inside the sandbox
-- **Multi-target** -- same agent YAML deploys to local Podman, kind, or OpenShift
-- **Declarative config** -- multi-document YAML bundles agent + providers + gateway + policy in one file
-- **Dry-run validation** -- `--dry-run` checks gateway, providers, env vars, and image before deploying
-- **Config inspection** -- `-o yaml` outputs the fully resolved harness config
+## The harness adds declarative configuration
+
+- **One-file agent definition** -- agent, providers, gateway, policy, and sandbox files in a single YAML
+- **Multi-document YAML** -- `kind: agent/provider/gateway/payload/policy` composed in one file
+- **Payload files** -- upload configs to sandbox paths without rebuilding the image
+- **Multi-target deploy** -- same YAML works on local Podman, kind, and OpenShift
+- **Dry-run validation** -- `--dry-run` checks everything before deploying
+- **Config inspection** -- `-o yaml` outputs the fully resolved config
+
+## Use OpenShell directly for runtime operations
+
+```bash
+openshell sandbox connect <name>     # interactive shell
+openshell sandbox exec <name> -- ... # run commands
+openshell sandbox logs <name>        # view logs
+openshell policy get <name>          # inspect policy
+```
+
+The harness handles setup. OpenShell handles the runtime.
 
 ## Install
 

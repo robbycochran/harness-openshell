@@ -16,6 +16,12 @@ type ProviderRef struct {
 	Env     map[string]string `yaml:"env,omitempty"`
 }
 
+type PayloadEntry struct {
+	SandboxPath string `yaml:"sandbox_path"`
+	LocalPath   string `yaml:"local_path,omitempty"`
+	Content     string `yaml:"content,omitempty"`
+}
+
 type AgentConfig struct {
 	Name       string            `yaml:"name"`
 	Gateway    string            `yaml:"gateway,omitempty"`
@@ -27,6 +33,7 @@ type AgentConfig struct {
 	Policy     string            `yaml:"policy,omitempty"`
 	Image      string            `yaml:"image,omitempty"`
 	Include    []string          `yaml:"include,omitempty"`
+	Payloads   []PayloadEntry    `yaml:"payloads,omitempty"`
 }
 
 func (c *AgentConfig) NoTTY() bool {
@@ -82,6 +89,7 @@ type Harness struct {
 	Agent     *AgentConfig
 	Gateways  map[string][]byte // name -> raw gateway YAML
 	Providers map[string][]byte // name -> raw provider profile YAML
+	Payloads  []PayloadEntry    // files to upload to sandbox
 	Policy    []byte            // raw policy YAML
 }
 
@@ -89,6 +97,14 @@ type Harness struct {
 type kindHeader struct {
 	Kind string `yaml:"kind"`
 	Name string `yaml:"name"`
+}
+
+// payloadDoc holds a kind: payload document.
+type payloadDoc struct {
+	Kind        string `yaml:"kind"`
+	SandboxPath string `yaml:"sandbox_path"`
+	LocalPath   string `yaml:"local_path,omitempty"`
+	Content     string `yaml:"content,omitempty"`
 }
 
 func ParseHarnessFile(path string) (*Harness, error) {
@@ -150,6 +166,26 @@ func ParseHarness(data []byte) (*Harness, error) {
 			}
 			h.Gateways[header.Name] = raw
 
+		case "payload", "config":
+			var doc payloadDoc
+			if err := yaml.Unmarshal(raw, &doc); err != nil {
+				return nil, fmt.Errorf("document %d: parsing payload: %w", docIndex, err)
+			}
+			if doc.SandboxPath == "" {
+				return nil, fmt.Errorf("document %d: kind: payload requires a sandbox_path field", docIndex)
+			}
+			if doc.Content == "" && doc.LocalPath == "" {
+				return nil, fmt.Errorf("document %d: kind: payload requires content or local_path field", docIndex)
+			}
+			if doc.Content != "" && doc.LocalPath != "" {
+				return nil, fmt.Errorf("document %d: kind: payload cannot have both content and local_path", docIndex)
+			}
+			h.Payloads = append(h.Payloads, PayloadEntry{
+				SandboxPath: doc.SandboxPath,
+				Content:     doc.Content,
+				LocalPath:   doc.LocalPath,
+			})
+
 		case "policy":
 			if h.Policy != nil {
 				return nil, fmt.Errorf("multiple policy documents found")
@@ -165,6 +201,8 @@ func ParseHarness(data []byte) (*Harness, error) {
 	if h.Agent == nil {
 		return nil, fmt.Errorf("no agent document found")
 	}
+	// Merge agent-level payloads into harness payloads
+	h.Payloads = append(h.Payloads, h.Agent.Payloads...)
 	return h, nil
 }
 
@@ -200,6 +238,18 @@ func RenderHarness(h *Harness, builtinProviders map[string][]byte) ([]byte, erro
 		buf.Write(data)
 	}
 
+	for _, p := range h.Payloads {
+		buf.WriteString("---\nkind: payload\nsandbox_path: " + p.SandboxPath + "\n")
+		if p.LocalPath != "" {
+			buf.WriteString("local_path: " + p.LocalPath + "\n")
+		} else if p.Content != "" {
+			buf.WriteString("content: |\n")
+			for _, line := range strings.Split(p.Content, "\n") {
+				buf.WriteString("  " + line + "\n")
+			}
+		}
+	}
+
 	if h.Policy != nil {
 		buf.WriteString("---\nkind: policy\n")
 		buf.Write(h.Policy)
@@ -209,11 +259,10 @@ func RenderHarness(h *Harness, builtinProviders map[string][]byte) ([]byte, erro
 }
 
 func expandEnvVar(key, value string) string {
-	expanded := os.ExpandEnv(value)
-	if expanded == "" {
-		expanded = os.Getenv(key)
+	if value == "" {
+		return os.Getenv(key)
 	}
-	return expanded
+	return os.ExpandEnv(value)
 }
 
 func (c *AgentConfig) BuildEnvMap() map[string]string {
@@ -307,4 +356,44 @@ func RenderPayload(cfg *AgentConfig, baseDir, destDir string) error {
 	}
 
 	return nil
+}
+
+// ResolvePayloads resolves payload entries into source/destination pairs for upload.
+// Content payloads are written to temp files. File payloads are resolved relative to baseDir.
+func ResolvePayloads(payloads []PayloadEntry, baseDir, tmpDir string) ([]struct{ Src, Dst string }, error) {
+	var uploads []struct{ Src, Dst string }
+	for _, p := range payloads {
+		if !strings.HasPrefix(p.SandboxPath, "/sandbox/") && !strings.HasPrefix(p.SandboxPath, "/etc/openshell/") {
+			return nil, fmt.Errorf("payload sandbox_path %q must start with /sandbox/ or /etc/openshell/", p.SandboxPath)
+		}
+		var src string
+		if p.Content != "" {
+			f, err := os.CreateTemp(tmpDir, "payload-*")
+			if err != nil {
+				return nil, fmt.Errorf("creating temp file for payload %s: %w", p.SandboxPath, err)
+			}
+			if _, err := f.WriteString(p.Content); err != nil {
+				f.Close()
+				return nil, fmt.Errorf("writing payload %s: %w", p.SandboxPath, err)
+			}
+			f.Close()
+			src = f.Name()
+		} else if p.LocalPath != "" {
+			resolved := p.LocalPath
+			if !filepath.IsAbs(resolved) {
+				resolved = filepath.Join(baseDir, resolved)
+			}
+			clean := filepath.Clean(resolved)
+			rel, err := filepath.Rel(filepath.Clean(baseDir), clean)
+			if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				return nil, fmt.Errorf("payload local_path %q escapes base directory", p.LocalPath)
+			}
+			if _, err := os.Stat(clean); err != nil {
+				return nil, fmt.Errorf("payload local_path %s: %w", p.LocalPath, err)
+			}
+			src = clean
+		}
+		uploads = append(uploads, struct{ Src, Dst string }{Src: src, Dst: p.SandboxPath})
+	}
+	return uploads, nil
 }

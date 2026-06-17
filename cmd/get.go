@@ -175,9 +175,9 @@ func newGetGatewaysCmd(cli string) *cobra.Command {
 				if g.Active {
 					active = "*"
 				}
-				rows[i] = []string{active + g.Name, g.Endpoint}
+				rows[i] = []string{g.Name, g.Endpoint, active}
 			}
-			printTable([]string{"Name", "Endpoint"}, rows)
+			printTable([]string{"Name", "Endpoint", "Active"}, rows)
 			return nil
 		},
 	}

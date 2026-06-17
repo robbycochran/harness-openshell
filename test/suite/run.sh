@@ -117,6 +117,12 @@ run_test "parse: default agent (no -f)" \
 run_test "parse: custom provider profile" \
   "$HARNESS" apply --dry-run -f "$CONFIGS/agent-groq.yaml"
 
+run_test "parse: harness with payloads" \
+  "$HARNESS" apply --dry-run -f "$CONFIGS/harness-with-payloads.yaml"
+
+run_test "output: kind: payload in -o yaml" \
+  bash -c '"$1" apply -o yaml -f "$2" | grep "kind: payload"' _ "$HARNESS" "$CONFIGS/harness-with-payloads.yaml"
+
 run_test_fail "parse: nonexistent file rejects" \
   "$HARNESS" apply --dry-run -f "/nonexistent/agent.yaml"
 

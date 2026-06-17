@@ -16,15 +16,16 @@ import (
 type sandboxOpts struct {
 	harnessDir string
 	gw         gateway.Gateway
-	name       string            // sandbox name
-	image      string            // sandbox image ref or relative Dockerfile dir
-	providers  []string          // registered providers to attach
-	noTTY      bool              // true → TTY=false for the sandbox
-	retrySleep time.Duration     // pause between retry attempts
-	sandboxCmd []string          // command to run inside the sandbox
-	payloadDir string            // pre-rendered payload dir to upload
-	env        map[string]string // env vars injected via --env on sandbox create
-	onSuccess  func(name string) // called after successful creation (optional)
+	name       string              // sandbox name
+	image      string              // sandbox image ref or relative Dockerfile dir
+	providers  []string            // registered providers to attach
+	noTTY      bool                // true → TTY=false for the sandbox
+	retrySleep time.Duration       // pause between retry attempts
+	sandboxCmd []string            // command to run inside the sandbox
+	payloadDir string              // pre-rendered payload dir to upload
+	uploads    []gateway.Upload    // additional uploads (payloads)
+	env        map[string]string   // env vars injected via --env on sandbox create
+	onSuccess  func(name string)   // called after successful creation (optional)
 }
 
 // createSandbox resolves the image path, stages the payload directory,
@@ -55,16 +56,18 @@ func createSandbox(opts sandboxOpts) error {
 		return fmt.Errorf("staging payload: %w", err)
 	}
 
-	// Create sandbox with retry loop (up to 5 attempts).
-	for attempt := 1; attempt <= 5; attempt++ {
+	const maxRetries = 5
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		uploads := []gateway.Upload{{Src: uploadDir, Dst: "/sandbox/.config"}}
+		uploads = append(uploads, opts.uploads...)
+
 		err := opts.gw.SandboxCreate(gateway.SandboxCreateOpts{
 			Name:      opts.name,
 			From:      image,
 			Providers: opts.providers,
 			TTY:       !opts.noTTY,
 			Keep:      true,
-			UploadSrc: uploadDir,
-			UploadDst: "/sandbox/.config",
+			Uploads:   uploads,
 			Command:   opts.sandboxCmd,
 			Env:       opts.env,
 		})
@@ -75,10 +78,10 @@ func createSandbox(opts sandboxOpts) error {
 			return nil
 		}
 
-		status.Warnf("attempt %d: %v, retrying in 5s", attempt, err)
+		status.Warnf("attempt %d: %v, retrying in %s", attempt, err, opts.retrySleep)
 		opts.gw.SandboxDelete(opts.name) // best-effort cleanup
 
-		if attempt == 5 {
+		if attempt == maxRetries {
 			return fmt.Errorf("sandbox create failed after 5 attempts: %w", err)
 		}
 		time.Sleep(opts.retrySleep)

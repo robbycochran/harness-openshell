@@ -548,6 +548,193 @@ func TestRenderHarness(t *testing.T) {
 	}
 }
 
+func TestParseHarness_WithPayloads(t *testing.T) {
+	data := []byte(`---
+kind: agent
+name: test
+providers: []
+---
+kind: payload
+sandbox_path: /sandbox/.claude.json
+content: |
+  {"mcpServers": {}}
+---
+kind: payload
+sandbox_path: /sandbox/.claude/CLAUDE.md
+content: |
+  # Test
+  Hello world.
+`)
+	h, err := ParseHarness(data)
+	if err != nil {
+		t.Fatalf("ParseHarness: %v", err)
+	}
+	if len(h.Payloads) != 2 {
+		t.Fatalf("Payloads = %d, want 2", len(h.Payloads))
+	}
+	if h.Payloads[0].SandboxPath != "/sandbox/.claude.json" {
+		t.Errorf("Payloads[0].SandboxPath = %q", h.Payloads[0].SandboxPath)
+	}
+	if !strings.Contains(h.Payloads[1].Content, "Hello world") {
+		t.Errorf("Payloads[1].Content = %q", h.Payloads[1].Content)
+	}
+}
+
+func TestParseHarness_PayloadRequiresPath(t *testing.T) {
+	data := []byte(`---
+kind: agent
+name: test
+providers: []
+---
+kind: payload
+content: |
+  some content
+`)
+	_, err := ParseHarness(data)
+	if err == nil {
+		t.Fatal("expected error for payload without path")
+	}
+	if !strings.Contains(err.Error(), "requires a sandbox_path") {
+		t.Errorf("error = %q", err)
+	}
+}
+
+func TestParseHarness_PayloadRequiresContentOrFile(t *testing.T) {
+	data := []byte(`---
+kind: agent
+name: test
+providers: []
+---
+kind: payload
+sandbox_path: /sandbox/empty.txt
+`)
+	_, err := ParseHarness(data)
+	if err == nil {
+		t.Fatal("expected error for payload without content or file")
+	}
+	if !strings.Contains(err.Error(), "requires content or local_path") {
+		t.Errorf("error = %q", err)
+	}
+}
+
+func TestParseHarness_PayloadContentAndFileMutuallyExclusive(t *testing.T) {
+	data := []byte(`---
+kind: agent
+name: test
+providers: []
+---
+kind: payload
+sandbox_path: /sandbox/test.txt
+content: hello
+local_path: test.txt
+`)
+	_, err := ParseHarness(data)
+	if err == nil {
+		t.Fatal("expected error for payload with both content and file")
+	}
+	if !strings.Contains(err.Error(), "cannot have both") {
+		t.Errorf("error = %q", err)
+	}
+}
+
+func TestParseHarness_KindConfigBackwardsCompat(t *testing.T) {
+	data := []byte(`---
+kind: agent
+name: test
+providers: []
+---
+kind: config
+sandbox_path: /sandbox/.claude.json
+content: |
+  {"test": true}
+`)
+	h, err := ParseHarness(data)
+	if err != nil {
+		t.Fatalf("ParseHarness: %v", err)
+	}
+	if len(h.Payloads) != 1 {
+		t.Fatalf("Payloads = %d, want 1", len(h.Payloads))
+	}
+}
+
+func TestParseHarness_AgentLevelPayloads(t *testing.T) {
+	data := []byte(`---
+kind: agent
+name: test
+providers: []
+payloads:
+  - sandbox_path: /sandbox/.mcp.json
+    content: |
+      {"servers": {}}
+`)
+	h, err := ParseHarness(data)
+	if err != nil {
+		t.Fatalf("ParseHarness: %v", err)
+	}
+	if len(h.Payloads) != 1 {
+		t.Fatalf("Payloads = %d, want 1", len(h.Payloads))
+	}
+	if h.Payloads[0].SandboxPath != "/sandbox/.mcp.json" {
+		t.Errorf("Path = %q", h.Payloads[0].SandboxPath)
+	}
+}
+
+func TestResolvePayloads_Content(t *testing.T) {
+	tmpDir := t.TempDir()
+	payloads := []PayloadEntry{
+		{SandboxPath: "/sandbox/.claude.json", Content: `{"test": true}`},
+	}
+	uploads, err := ResolvePayloads(payloads, t.TempDir(), tmpDir)
+	if err != nil {
+		t.Fatalf("ResolvePayloads: %v", err)
+	}
+	if len(uploads) != 1 {
+		t.Fatalf("uploads = %d, want 1", len(uploads))
+	}
+	if uploads[0].Dst != "/sandbox/.claude.json" {
+		t.Errorf("Dst = %q", uploads[0].Dst)
+	}
+	data, err := os.ReadFile(uploads[0].Src)
+	if err != nil {
+		t.Fatalf("reading src: %v", err)
+	}
+	if string(data) != `{"test": true}` {
+		t.Errorf("content = %q", data)
+	}
+}
+
+func TestResolvePayloads_File(t *testing.T) {
+	baseDir := t.TempDir()
+	os.WriteFile(filepath.Join(baseDir, "test.json"), []byte(`{"from": "file"}`), 0o644)
+	payloads := []PayloadEntry{
+		{SandboxPath: "/sandbox/test.json",  LocalPath: "test.json"},
+	}
+	uploads, err := ResolvePayloads(payloads, baseDir, t.TempDir())
+	if err != nil {
+		t.Fatalf("ResolvePayloads: %v", err)
+	}
+	if len(uploads) != 1 {
+		t.Fatalf("uploads = %d, want 1", len(uploads))
+	}
+	data, err := os.ReadFile(uploads[0].Src)
+	if err != nil {
+		t.Fatalf("reading src: %v", err)
+	}
+	if string(data) != `{"from": "file"}` {
+		t.Errorf("content = %q", data)
+	}
+}
+
+func TestResolvePayloads_InvalidPath(t *testing.T) {
+	payloads := []PayloadEntry{
+		{SandboxPath: "/etc/passwd", Content: "bad"},
+	}
+	_, err := ResolvePayloads(payloads, t.TempDir(), t.TempDir())
+	if err == nil {
+		t.Fatal("expected error for path not starting with /sandbox/")
+	}
+}
+
 func TestRenderPayload_IncludePathTraversal(t *testing.T) {
 	baseDir := t.TempDir()
 	cfg := &AgentConfig{
