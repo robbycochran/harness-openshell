@@ -81,7 +81,7 @@ test-kind: cli
 test-remote: cli dev-sandbox
 	@test -n "$${KUBECONFIG}" || { echo "ERROR: Set KUBECONFIG for OCP (e.g. export KUBECONFIG=infracluster/kubeconfig)"; exit 1; }
 	@echo ""
-	HARNESS_OS_IMAGE=$(IMAGE) ./test/test-flow.sh helm-openshift-route
+	HARNESS_OS_IMAGE=$(IMAGE) ./test/test-flow.sh openshift
 
 ## All: unit + local + kind + remote
 test-all: test test-local test-kind test-remote

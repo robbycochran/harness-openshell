@@ -21,7 +21,7 @@ func NewDeployCmd(harnessDir, cli string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "deploy [gateway]",
 		Short: "Deploy or verify the gateway",
-		Long:  "Deploy a gateway by name (e.g., local-container, helm-nodeport, helm-openshift-route). Reads configuration from profiles/gateways/<name>.yaml.",
+		Long:  "Deploy a gateway by name (e.g., local-container, helm, openshift). Reads configuration from profiles/gateways/<name>.yaml.",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			gatewayName, err := resolveGatewayName(args)

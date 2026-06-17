@@ -189,7 +189,7 @@ func TestInitRun_InteractiveGatewayKind(t *testing.T) {
 	outPath := filepath.Join(dir, "harness.yaml")
 	var buf bytes.Buffer
 
-	input := "claude\n1\nhelm-nodeport\n"
+	input := "claude\n1\nhelm\n"
 	err := initRun(strings.NewReader(input), &buf, outPath, false, false, testDefaultConfig, "")
 	if err != nil {
 		t.Fatalf("initRun: %v", err)
@@ -198,8 +198,8 @@ func TestInitRun_InteractiveGatewayKind(t *testing.T) {
 	data, _ := os.ReadFile(outPath)
 	var cfg agent.AgentConfig
 	yaml.Unmarshal(data, &cfg)
-	if cfg.Gateway != "helm-nodeport" {
-		t.Errorf("Gateway = %q, want helm-nodeport", cfg.Gateway)
+	if cfg.Gateway != "helm" {
+		t.Errorf("Gateway = %q, want helm", cfg.Gateway)
 	}
 }
 
@@ -208,7 +208,7 @@ func TestInitRun_InteractiveGatewayOCP(t *testing.T) {
 	outPath := filepath.Join(dir, "harness.yaml")
 	var buf bytes.Buffer
 
-	input := "claude\n1\nhelm-openshift-route\n"
+	input := "claude\n1\nopenshift\n"
 	err := initRun(strings.NewReader(input), &buf, outPath, false, false, testDefaultConfig, "")
 	if err != nil {
 		t.Fatalf("initRun: %v", err)
@@ -217,8 +217,8 @@ func TestInitRun_InteractiveGatewayOCP(t *testing.T) {
 	data, _ := os.ReadFile(outPath)
 	var cfg agent.AgentConfig
 	yaml.Unmarshal(data, &cfg)
-	if cfg.Gateway != "helm-openshift-route" {
-		t.Errorf("Gateway = %q, want helm-openshift-route", cfg.Gateway)
+	if cfg.Gateway != "openshift" {
+		t.Errorf("Gateway = %q, want openshift", cfg.Gateway)
 	}
 }
 

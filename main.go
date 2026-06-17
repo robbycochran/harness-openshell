@@ -19,10 +19,10 @@ var defaultAgentConfig []byte
 //go:embed profiles/gateways/local-container.yaml
 var localContainerGatewayProfile []byte
 
-//go:embed profiles/gateways/helm-nodeport.yaml
+//go:embed profiles/gateways/helm.yaml
 var helmNodeportGatewayProfile []byte
 
-//go:embed profiles/gateways/helm-openshift-route.yaml
+//go:embed profiles/gateways/openshift.yaml
 var helmOpenshiftRouteGatewayProfile []byte
 
 func main() {
@@ -55,8 +55,8 @@ func main() {
 	cmd.DefaultAgentConfig = defaultAgentConfig
 	cmd.EmbeddedGatewayProfiles = map[string][]byte{
 		"local-container":        localContainerGatewayProfile,
-		"helm-nodeport":          helmNodeportGatewayProfile,
-		"helm-openshift-route":   helmOpenshiftRouteGatewayProfile,
+		"helm":          helmNodeportGatewayProfile,
+		"openshift":   helmOpenshiftRouteGatewayProfile,
 	}
 	root.CompletionOptions.HiddenDefaultCmd = true
 

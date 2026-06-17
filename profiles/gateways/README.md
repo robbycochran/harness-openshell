@@ -50,11 +50,11 @@ secrets:
 
 The default. Requires openshell installed and running via `brew services start openshell` or equivalent. No Helm, no K8s.
 
-### `helm-nodeport.yaml` -- local kind cluster
+### `helm.yaml` -- local kind cluster
 
 Deploys to a kind cluster. Uses NodePort access (no Ingress needed). TLS disabled for local dev simplicity. Requires `kind create cluster`.
 
-### `helm-openshift-route.yaml` -- OpenShift cluster
+### `openshift.yaml` -- OpenShift cluster
 
 Deploys to an OpenShift cluster with Route-based access and mTLS. Requires `oc login` and cluster-admin for SCC grants.
 
@@ -62,15 +62,15 @@ Deploys to an OpenShift cluster with Route-based access and mTLS. Requires `oc l
 
 ```bash
 harness apply -f harness.yaml                    # uses local (default)
-harness apply -f harness.yaml --gateway helm-openshift-route      # uses gateways/helm-openshift-route.yaml
-harness apply -f harness.yaml --gateway helm-nodeport      # uses gateways/helm-nodeport.yaml
+harness apply -f harness.yaml --gateway openshift      # uses gateways/openshift.yaml
+harness apply -f harness.yaml --gateway helm      # uses gateways/helm.yaml
 ```
 
 Agent configs can also set a default gateway:
 
 ```yaml
 name: agent
-gateway: helm-openshift-route
+gateway: openshift
 ```
 
 The `OPENSHELL_GATEWAY` env var works as a fallback.

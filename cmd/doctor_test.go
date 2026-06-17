@@ -53,7 +53,7 @@ func TestCheckTargetDeps_Local(t *testing.T) {
 
 func TestCheckTargetDeps_Remote(t *testing.T) {
 	cfg := testAgentConfig(t)
-	cfg.Gateway = "helm-openshift-route"
+	cfg.Gateway = "openshift"
 	results := checkTargetDeps(cfg, "", "")
 	if len(results) < 1 {
 		t.Fatal("expected at least 1 result for remote")

@@ -30,7 +30,7 @@ Launch an interactive coding session with Claude Code or OpenCode.
 harness apply -f harness.yaml --attach
 
 # On OpenShift
-harness apply -f harness.yaml --attach --gateway helm-openshift-route
+harness apply -f harness.yaml --attach --gateway openshift
 
 # OpenCode instead of Claude
 harness apply -f harness.yaml --attach --entrypoint opencode
