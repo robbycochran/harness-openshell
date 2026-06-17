@@ -7,7 +7,7 @@
 # Requires: KUBECONFIG, kubectl, helm, cluster access.
 
 name: agent
-gateway: ocp
+gateway: helm-openshift-route
 entrypoint: claude
 tty: true
 

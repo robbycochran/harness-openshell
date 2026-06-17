@@ -114,22 +114,21 @@ func checkOpenShell(cfg *agent.AgentConfig, cli, _ string) []CheckResult {
 	}}
 }
 
-func checkTargetDeps(cfg *agent.AgentConfig, _, _ string) []CheckResult {
+func checkTargetDeps(cfg *agent.AgentConfig, harnessDir, _ string) []CheckResult {
 	target := cfg.Gateway
 	if target == "" {
-		target = "local"
+		target = "local-container"
 	}
 
-	switch target {
-	case "local":
-		return checkLocalDeps()
-	case "kind":
-		return checkKindDeps()
-	case "ocp":
+	gwCfg, _ := resolveGatewayConfig(harnessDir, target)
+	if gwCfg != nil {
+		if gwCfg.IsLocal() {
+			return checkLocalDeps()
+		}
 		return checkRemoteDeps()
-	default:
-		return checkLocalDeps()
 	}
+
+	return checkLocalDeps()
 }
 
 func checkLocalDeps() []CheckResult {
@@ -148,25 +147,6 @@ func checkLocalDeps() []CheckResult {
 		}
 	}
 	return []CheckResult{{Group: "target", Name: "local", Status: "fail", Message: "no container runtime (podman or docker) responding"}}
-}
-
-func checkKindDeps() []CheckResult {
-	var results []CheckResult
-	results = append(results, checkLocalDeps()...)
-
-	if _, err := exec.LookPath("kubectl"); err != nil {
-		results = append(results, CheckResult{Group: "target", Name: "kubectl", Status: "fail", Message: "kubectl not found on PATH"})
-	} else {
-		results = append(results, CheckResult{Group: "target", Name: "kubectl", Status: "pass", Message: "found"})
-	}
-
-	if _, err := exec.LookPath("kind"); err != nil {
-		results = append(results, CheckResult{Group: "target", Name: "kind", Status: "fail", Message: "kind not found on PATH"})
-	} else {
-		results = append(results, CheckResult{Group: "target", Name: "kind", Status: "pass", Message: "found"})
-	}
-
-	return results
 }
 
 func checkRemoteDeps() []CheckResult {

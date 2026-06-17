@@ -30,7 +30,7 @@ Launch an interactive coding session with Claude Code or OpenCode.
 harness apply -f harness.yaml --attach
 
 # On OpenShift
-harness apply -f harness.yaml --attach --gateway ocp
+harness apply -f harness.yaml --attach --gateway helm-openshift-route
 
 # OpenCode instead of Claude
 harness apply -f harness.yaml --attach --entrypoint opencode
@@ -148,7 +148,7 @@ Or build from source: `make cli`
 | `harness apply --attach` | Interactive TTY mode |
 | `harness apply --dry-run` | Validate without deploying |
 | `harness apply -o yaml` | Output resolved config |
-| `harness deploy [local\|ocp\|kind]` | Deploy gateway only |
+| `harness deploy <gateway>` | Deploy gateway only |
 | `harness get agents\|providers\|gateways` | List resources |
 | `harness describe <name>` | Sandbox details |
 | `harness delete <name> [--all]` | Tear down |

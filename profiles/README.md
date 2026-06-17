@@ -10,7 +10,7 @@ Define what runs in the sandbox. One agent config = one sandbox.
 name: agent                     # sandbox name
 entrypoint: claude              # claude, opencode, bash, or any binary on PATH
 tty: true                       # enable TTY (default: true)
-gateway: ocp                    # target gateway (default: local)
+gateway: helm-openshift-route   # target gateway (default: local-container)
 task: @tasks/review.md          # task file passed to entrypoint via -p
 image: ghcr.io/...              # override sandbox image
 policy: path/to/policy.yaml     # network policy file
