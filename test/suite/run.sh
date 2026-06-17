@@ -253,48 +253,49 @@ if $LIVE && "$CLI" inference get >/dev/null 2>&1; then
   # Clean slate
   "$HARNESS" delete --sandboxes --providers >/dev/null 2>&1 || true
 
+  # Each provider: register, create sandbox, verify in openshell, test functionality, cleanup.
+
   # GitHub (from-existing credential style)
   if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-    run_test "provider: register github" \
-      "$HARNESS" apply --dry-run -f "$CONFIGS/agent-github-only.yaml"
-
-    run_test "provider: github live apply" \
+    run_test "provider: github register + apply" \
       "$HARNESS" apply -f "$CONFIGS/agent-github-only.yaml" --name test-gh
 
     run_test "provider: github in openshell" \
       bash -c '"$1" provider list 2>/dev/null | grep -q github' _ "$CLI"
 
+    run_test "func: github api from sandbox" \
+      "$CLI" sandbox exec --name test-gh -- \
+        curl -sf https://api.github.com/user -o /dev/null
+
     "$HARNESS" delete test-gh >/dev/null 2>&1 || true
   else
-    skip_test "provider: register github" "GITHUB_TOKEN not set"
-    skip_test "provider: github live apply" "GITHUB_TOKEN not set"
+    skip_test "provider: github register + apply" "GITHUB_TOKEN not set"
     skip_test "provider: github in openshell" "GITHUB_TOKEN not set"
+    skip_test "func: github api from sandbox" "GITHUB_TOKEN not set"
   fi
 
   # Atlassian (basic auth credential style)
   if [[ -n "${JIRA_API_TOKEN:-}" ]]; then
-    run_test "provider: register atlassian" \
-      "$HARNESS" apply --dry-run -f "$CONFIGS/agent-atlassian.yaml"
-
-    run_test "provider: atlassian live apply" \
+    run_test "provider: atlassian register + apply" \
       "$HARNESS" apply -f "$CONFIGS/agent-atlassian.yaml" --name test-atl
 
     run_test "provider: atlassian in openshell" \
       bash -c '"$1" provider list 2>/dev/null | grep -q atlassian' _ "$CLI"
 
+    run_test "func: jira api from sandbox" \
+      "$CLI" sandbox exec --name test-atl -- \
+        curl -sf "${JIRA_URL}/rest/api/2/myself" -o /dev/null
+
     "$HARNESS" delete test-atl >/dev/null 2>&1 || true
   else
-    skip_test "provider: register atlassian" "JIRA_API_TOKEN not set"
-    skip_test "provider: atlassian live apply" "JIRA_API_TOKEN not set"
+    skip_test "provider: atlassian register + apply" "JIRA_API_TOKEN not set"
     skip_test "provider: atlassian in openshell" "JIRA_API_TOKEN not set"
+    skip_test "func: jira api from sandbox" "JIRA credentials not set"
   fi
 
   # Vertex AI (ADC credential style)
   if [[ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]]; then
-    run_test "provider: register vertex" \
-      "$HARNESS" apply --dry-run -f "$CONFIGS/agent-vertex.yaml"
-
-    run_test "provider: vertex live apply" \
+    run_test "provider: vertex register + apply" \
       "$HARNESS" apply -f "$CONFIGS/agent-vertex.yaml" --name test-vtx
 
     run_test "provider: vertex in openshell" \
@@ -303,30 +304,35 @@ if $LIVE && "$CLI" inference get >/dev/null 2>&1; then
     run_test "provider: inference route set" \
       bash -c '"$1" inference get 2>/dev/null' _ "$CLI"
 
+    run_test "func: inference route from sandbox" \
+      "$CLI" sandbox exec --name test-vtx -- \
+        bash -c 'curl -sf https://inference.local/v1/models 2>/dev/null | head -1 | grep -q .'
+
     "$HARNESS" delete test-vtx >/dev/null 2>&1 || true
   else
-    skip_test "provider: register vertex" "ANTHROPIC_VERTEX_PROJECT_ID not set"
-    skip_test "provider: vertex live apply" "ANTHROPIC_VERTEX_PROJECT_ID not set"
+    skip_test "provider: vertex register + apply" "ANTHROPIC_VERTEX_PROJECT_ID not set"
     skip_test "provider: vertex in openshell" "ANTHROPIC_VERTEX_PROJECT_ID not set"
     skip_test "provider: inference route set" "ANTHROPIC_VERTEX_PROJECT_ID not set"
+    skip_test "func: inference route from sandbox" "ANTHROPIC_VERTEX_PROJECT_ID not set"
   fi
 
   # GWS (OAuth refresh credential style)
   if command -v gws >/dev/null 2>&1 && gws auth export --unmasked >/dev/null 2>&1; then
-    run_test "provider: register gws" \
-      "$HARNESS" apply --dry-run -f "$CONFIGS/agent-gws.yaml"
-
-    run_test "provider: gws live apply" \
+    run_test "provider: gws register + apply" \
       "$HARNESS" apply -f "$CONFIGS/agent-gws.yaml" --name test-gws
 
     run_test "provider: gws in openshell" \
       bash -c '"$1" provider list 2>/dev/null | grep -q gws' _ "$CLI"
 
+    run_test "func: gmail api from sandbox" \
+      "$CLI" sandbox exec --name test-gws -- \
+        bash -c 'for i in 1 2 3; do curl -sf https://gmail.googleapis.com/gmail/v1/users/me/profile -H "Authorization: Bearer $GOOGLE_WORKSPACE_CLI_TOKEN" -o /dev/null && exit 0; sleep 2; done; exit 1'
+
     "$HARNESS" delete test-gws >/dev/null 2>&1 || true
   else
-    skip_test "provider: register gws" "gws not authenticated"
-    skip_test "provider: gws live apply" "gws not authenticated"
+    skip_test "provider: gws register + apply" "gws not authenticated"
     skip_test "provider: gws in openshell" "gws not authenticated"
+    skip_test "func: gmail api from sandbox" "gws not authenticated"
   fi
 
   # All providers together
@@ -368,7 +374,7 @@ echo ""
 echo "=== Free API providers ==="
 
 if [[ -n "${GROQ_API_KEY:-}" ]]; then
-  run_test "provider: groq dry-run" \
+  run_test "free-api: groq dry-run" \
     bash -c 'cat > /tmp/test-groq.yaml << EOF
 name: test-groq
 entrypoint: bash
@@ -378,12 +384,28 @@ env:
   GROQ_BASE_URL: https://api.groq.com/openai/v1
 EOF
 "$1" apply --dry-run -f /tmp/test-groq.yaml' _ "$HARNESS"
+
+  # Live task: call Groq API from sandbox (needs policy update for api.groq.com)
+  if $LIVE && "$CLI" inference get >/dev/null 2>&1; then
+    run_test "free-api: groq completion from sandbox" \
+      bash -c '"$1" apply -f /tmp/test-groq.yaml --name test-groq-live 2>/dev/null && \
+        "$4" policy update test-groq-live --add-endpoint "api.groq.com:443:read-write:rest:enforce" 2>/dev/null && \
+        sleep 3 && \
+        "$2" sandbox exec --name test-groq-live -- bash -c '\''
+          curl -sf https://api.groq.com/openai/v1/chat/completions \
+            -H "Authorization: Bearer $GROQ_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"model\":\"llama-3.3-70b-versatile\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with only the word yes\"}],\"max_tokens\":5}" \
+            | grep -qi "yes"'\'' && \
+        "$3" delete test-groq-live >/dev/null 2>&1' _ "$HARNESS" "$CLI" "$HARNESS" "$CLI"
+  fi
 else
-  skip_test "provider: groq dry-run" "GROQ_API_KEY not set"
+  skip_test "free-api: groq dry-run" "GROQ_API_KEY not set"
+  $LIVE && skip_test "free-api: groq completion from sandbox" "GROQ_API_KEY not set"
 fi
 
 if [[ -n "${OPENROUTER_API_KEY:-}" ]]; then
-  run_test "provider: openrouter dry-run" \
+  run_test "free-api: openrouter dry-run" \
     bash -c 'cat > /tmp/test-openrouter.yaml << EOF
 name: test-openrouter
 entrypoint: bash
@@ -393,12 +415,28 @@ env:
   OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
 EOF
 "$1" apply --dry-run -f /tmp/test-openrouter.yaml' _ "$HARNESS"
+
+  # Live task: call OpenRouter API from sandbox
+  if $LIVE && "$CLI" inference get >/dev/null 2>&1; then
+    run_test "free-api: openrouter completion from sandbox" \
+      bash -c '"$1" apply -f /tmp/test-openrouter.yaml --name test-or-live 2>/dev/null && \
+        "$4" policy update test-or-live --add-endpoint "openrouter.ai:443:read-write:rest:enforce" 2>/dev/null && \
+        sleep 3 && \
+        "$2" sandbox exec --name test-or-live -- bash -c '\''
+          curl -sf https://openrouter.ai/api/v1/chat/completions \
+            -H "Authorization: Bearer $OPENROUTER_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"model\":\"meta-llama/llama-3.3-70b-instruct:free\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with only the word yes\"}],\"max_tokens\":5}" \
+            | grep -qi "yes"'\'' && \
+        "$3" delete test-or-live >/dev/null 2>&1' _ "$HARNESS" "$CLI" "$HARNESS" "$CLI"
+  fi
 else
-  skip_test "provider: openrouter dry-run" "OPENROUTER_API_KEY not set"
+  skip_test "free-api: openrouter dry-run" "OPENROUTER_API_KEY not set"
+  $LIVE && skip_test "free-api: openrouter completion from sandbox" "OPENROUTER_API_KEY not set"
 fi
 
 if [[ -n "${NVIDIA_API_KEY:-}" ]]; then
-  run_test "provider: nvidia nim dry-run" \
+  run_test "free-api: nvidia nim dry-run" \
     bash -c 'cat > /tmp/test-nvidia.yaml << EOF
 name: test-nvidia
 entrypoint: bash
@@ -408,8 +446,24 @@ env:
   NVIDIA_API_KEY: \${NVIDIA_API_KEY}
 EOF
 "$1" apply --dry-run -f /tmp/test-nvidia.yaml' _ "$HARNESS"
+
+  # Live task: call NVIDIA NIM API from sandbox
+  if $LIVE && "$CLI" inference get >/dev/null 2>&1; then
+    run_test "free-api: nvidia nim completion from sandbox" \
+      bash -c '"$1" apply -f /tmp/test-nvidia.yaml --name test-nim-live 2>/dev/null && \
+        "$4" policy update test-nim-live --add-endpoint "integrate.api.nvidia.com:443:read-write:rest:enforce" 2>/dev/null && \
+        sleep 3 && \
+        "$2" sandbox exec --name test-nim-live -- bash -c '\''
+          curl -sf https://integrate.api.nvidia.com/v1/chat/completions \
+            -H "Authorization: Bearer $NVIDIA_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"model\":\"meta/llama-3.3-70b-instruct\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with only the word yes\"}],\"max_tokens\":5}" \
+            | grep -qi "yes"'\'' && \
+        "$3" delete test-nim-live >/dev/null 2>&1' _ "$HARNESS" "$CLI" "$HARNESS" "$CLI"
+  fi
 else
-  skip_test "provider: nvidia nim dry-run" "NVIDIA_API_KEY not set"
+  skip_test "free-api: nvidia nim dry-run" "NVIDIA_API_KEY not set"
+  $LIVE && skip_test "free-api: nvidia nim completion from sandbox" "NVIDIA_API_KEY not set"
 fi
 
 echo ""
