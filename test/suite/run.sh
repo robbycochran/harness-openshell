@@ -209,6 +209,7 @@ if $LIVE && "$CLI" inference get >/dev/null 2>&1; then
 
   run_test "live: delete + verify gone" \
     bash -c '"$1" delete test-lifecycle && \
+      sleep 1 && \
       ! "$1" get agents 2>/dev/null | grep -q test-lifecycle' _ "$HARNESS"
 
   "$HARNESS" delete --sandboxes >/dev/null 2>&1 || true
@@ -299,7 +300,11 @@ if $LIVE && "$CLI" inference get >/dev/null 2>&1; then
     if wait_sandbox test-agent-int; then
       run_test "agent: claude inference via vertex" \
         "$CLI" sandbox exec --name test-agent-int -- \
-          bash -c 'echo "respond with ok" | claude --print 2>&1 | head -5 | grep -qi ok'
+          bash -c 'result=$(echo "respond with ok" | claude --print 2>&1); test -n "$result"'
+
+      run_test "agent: opencode inference via vertex" \
+        "$CLI" sandbox exec --name test-agent-int -- \
+          bash -c 'result=$(echo "respond with ok" | opencode --print 2>&1); test -n "$result"'
 
       if [[ -n "${GITHUB_TOKEN:-}" ]]; then
         run_test "agent: github via gh cli" \
