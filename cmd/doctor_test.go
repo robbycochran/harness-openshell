@@ -250,24 +250,6 @@ credentials:
 	}
 }
 
-func TestProfileTypeFor(t *testing.T) {
-	tests := []struct {
-		name, want string
-	}{
-		{"github", "github"},
-		{"vertex-local", "google-vertex-ai"},
-		{"gws", "google-workspace"},
-		{"atlassian", "atlassian"},
-		{"custom", "custom"},
-	}
-	for _, tt := range tests {
-		got := profileTypeFor(tt.name)
-		if got != tt.want {
-			t.Errorf("profileTypeFor(%q) = %q, want %q", tt.name, got, tt.want)
-		}
-	}
-}
-
 // --- helpers ---
 
 func testAgentConfig(t *testing.T) *agent.AgentConfig {

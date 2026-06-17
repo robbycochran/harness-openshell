@@ -282,7 +282,7 @@ func checkProviderEnvVars(cfg *agent.AgentConfig, cli, harnessDir string) []Chec
 
 func checkGatewayManagedProvider(name string) CheckResult {
 	switch name {
-	case "gws":
+	case "google-workspace":
 		gwsPath, _ := exec.LookPath("gws")
 		if gwsPath == "" {
 			return CheckResult{Group: "provider", Name: name, Status: "fail", Message: "gws CLI not installed (brew install googleworkspace/cli/gws)"}
@@ -291,7 +291,7 @@ func checkGatewayManagedProvider(name string) CheckResult {
 			return CheckResult{Group: "provider", Name: name, Status: "fail", Message: "not authenticated (run: gws auth login)"}
 		}
 		return CheckResult{Group: "provider", Name: name, Status: "pass", Message: "authenticated (gateway-managed OAuth)"}
-	case "vertex-local":
+	case "google-vertex-ai":
 		home, _ := os.UserHomeDir()
 		adcPath := envOr("GOOGLE_APPLICATION_CREDENTIALS",
 			filepath.Join(home, ".config", "gcloud", "application_default_credentials.json"))
@@ -304,29 +304,9 @@ func checkGatewayManagedProvider(name string) CheckResult {
 	}
 }
 
-// providerProfileType maps harness provider names to OpenShell profile IDs.
-// Most providers use the same name for both; these are the exceptions.
-var providerProfileType = map[string]string{
-	"vertex-local": "google-vertex-ai",
-	"gws":          "google-workspace",
-}
-
-func profileTypeFor(name string) string {
-	if t, ok := providerProfileType[name]; ok {
-		return t
-	}
-	return name
-}
-
 func loadProviderProfile(name, cli, harnessDir string) *providerProfile {
-	profileType := profileTypeFor(name)
-	if profile := loadProfileFromOpenShell(profileType, cli); profile != nil {
+	if profile := loadProfileFromOpenShell(name, cli); profile != nil {
 		return profile
-	}
-	if profileType != name {
-		if profile := loadProfileFromOpenShell(name, cli); profile != nil {
-			return profile
-		}
 	}
 	return loadProfileFromDisk(name, harnessDir)
 }

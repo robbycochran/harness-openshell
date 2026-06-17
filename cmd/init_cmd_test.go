@@ -15,7 +15,7 @@ var testDefaultConfig = []byte(`name: test-agent
 entrypoint: claude
 tty: true
 providers:
-  - profile: vertex-local
+  - profile: google-vertex-ai
 env:
   ANTHROPIC_BASE_URL: https://inference.local
 `)
@@ -243,24 +243,6 @@ func TestInitRun_RemoteIsInvalidGateway(t *testing.T) {
 	err := initRun(strings.NewReader(input), &buf, outPath, false, false, testDefaultConfig)
 	if err == nil {
 		t.Fatal("expected error: 'remote' is not a valid gateway, use 'ocp'")
-	}
-}
-
-func TestProviderNameMapping(t *testing.T) {
-	tests := []struct {
-		profileID, want string
-	}{
-		{"github", "github"},
-		{"google-vertex-ai", "vertex-local"},
-		{"google-workspace", "gws"},
-		{"atlassian", "atlassian"},
-		{"pypi", "pypi"},
-	}
-	for _, tt := range tests {
-		got := providerNameFor(tt.profileID)
-		if got != tt.want {
-			t.Errorf("providerNameFor(%q) = %q, want %q", tt.profileID, got, tt.want)
-		}
 	}
 }
 

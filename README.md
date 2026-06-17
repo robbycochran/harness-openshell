@@ -97,12 +97,12 @@ tty: true
 
 providers:
   - profile: github
-  - profile: vertex-local
+  - profile: google-vertex-ai
   - profile: atlassian
     env:
       JIRA_URL: ${JIRA_URL}
       JIRA_USERNAME: ${JIRA_USERNAME}
-  - profile: gws
+  - profile: google-workspace
 
 env:
   ANTHROPIC_BASE_URL: https://inference.local
@@ -244,9 +244,9 @@ Each provider requires credentials on the host. Missing providers are skipped.
 | Provider | Required |
 |----------|----------|
 | `github` | `GITHUB_TOKEN` env var |
-| `vertex-local` | `gcloud auth application-default login` + `ANTHROPIC_VERTEX_PROJECT_ID` + `CLOUD_ML_REGION` |
+| `google-vertex-ai` | `gcloud auth application-default login` + `ANTHROPIC_VERTEX_PROJECT_ID` + `CLOUD_ML_REGION` |
 | `atlassian` | `JIRA_API_TOKEN` + `JIRA_URL` + `JIRA_USERNAME` |
-| `gws` | `gws auth login` (OAuth via [gws CLI](https://github.com/googleworkspace/cli)) |
+| `google-workspace` | `gws auth login` (OAuth via [gws CLI](https://github.com/googleworkspace/cli)) |
 
 ## Documentation Map
 
