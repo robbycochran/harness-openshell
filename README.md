@@ -12,6 +12,16 @@ harness doctor                      # check your environment
 harness apply -f harness.yaml       # launch a sandbox
 ```
 
+### Coding agent
+
+Launch an interactive coding session with Claude Code or OpenCode.
+
+```bash
+harness apply -f harness.yaml --attach                       # local Podman
+harness apply -f harness.yaml --attach --gateway openshift    # on OpenShift
+harness apply -f harness.yaml --attach --entrypoint opencode  # OpenCode
+```
+
 ### One-shot tasks
 
 Run a task headlessly -- the agent executes in a sandbox and outputs results.
@@ -23,9 +33,7 @@ harness apply -f harness.yaml --task @skills/cpp-pro/SKILL.md
 
 ### Clone a repo into the sandbox
 
-The `repo` field clones a repository outside the sandbox and uploads it. Git credentials never enter the sandbox unless needed.
-
-Use `base_agent` to inherit providers, env, and payloads from an existing config — you only specify what's different:
+Use `base_agent` to inherit providers and inference routing from an existing config. The `repo` field clones the repository outside the sandbox and uploads it -- OpenShell sandboxes have no host mounts by design.
 
 ```yaml
 name: reviewer
@@ -34,46 +42,11 @@ repo: https://github.com/stackrox/collector
 task: "identify the highest-priority C++ remediation"
 ```
 
-This inherits everything from `agent-default.yaml` (providers, inference routing, payloads) and adds the repo and task. Without `base_agent`, you'd need to specify the inference provider and env vars yourself.
-
 ```bash
 harness apply -f reviewer.yaml
 ```
 
-### Getting results out
-
-The agent runs in an isolated sandbox. To extract results:
-
-```bash
-# Agent outputs to stdout (--task mode)
-harness apply -f harness.yaml --task "summarize the codebase" > results.md
-
-# Pull a specific file from the sandbox
-openshell sandbox exec <name> -- cat /sandbox/collector/report.md > report.md
-
-# Extract a diff
-openshell sandbox exec <name> -- git -C /sandbox/collector diff > changes.patch
-
-# Download files
-openshell sandbox exec <name> -- tar czf - /sandbox/collector/output/ > output.tar.gz
-```
-
-If the `github` provider is attached, the agent can push directly -- the proxy provides a scoped `GITHUB_TOKEN` without exposing raw credentials.
-
-### Coding agent
-
-Launch an interactive coding session with Claude Code or OpenCode.
-
-```bash
-# Local (Podman)
-harness apply -f harness.yaml --attach
-
-# On OpenShift
-harness apply -f harness.yaml --attach --gateway openshift
-
-# OpenCode instead of Claude
-harness apply -f harness.yaml --attach --entrypoint opencode
-```
+To get results out: `--task` mode outputs to stdout, `openshell sandbox exec` pulls files, or attach a `github` provider so the agent can push directly via the scoped proxy token.
 
 ## Why this exists
 
