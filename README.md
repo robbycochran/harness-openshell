@@ -50,11 +50,11 @@ To get results out: `--task` mode outputs to stdout, `openshell sandbox exec` pu
 
 ## Why this exists
 
-[OpenShell](https://github.com/NVIDIA/OpenShell) is a sandbox managment layer with deny-by-default L7 network policy, credential proxy, filesystem isolation, and inference routing. It is designed as a strict, secure base that supports other workflows. 
+[OpenShell](https://github.com/NVIDIA/OpenShell) is a sandbox management layer with deny-by-default L7 network policy, credential proxy, filesystem isolation, and inference routing. It is designed as a strict, secure base that supports other workflows. 
 
 One YAML file defines the agent, providers, payloads, and policy and one command deploys it via Podman or remotely on Kubernetes.
 
-OpenShell's upstream direction is toward a [Kubernetes Operator](https://github.com/NVIDIA/OpenShell/issues/1719) where providers and sandboxes become CRDs and the gateway narrows to data-plane only. The harness explores what the workflow layer looks like above that with a develper mindset from local machine to cluster.
+OpenShell's upstream direction is toward a [Kubernetes Operator](https://github.com/NVIDIA/OpenShell/issues/1719) where providers and sandboxes become CRDs and the gateway narrows to data-plane only. The harness explores what the workflow layer looks like above that with a developer mindset from local machine to cluster.
 
 ## The Agent YAML
 
