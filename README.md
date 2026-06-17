@@ -209,6 +209,32 @@ Each provider discovers credentials from the host. Missing providers are skipped
 | `profiles/gateways/*.yaml` | Gateway profiles per target |
 | `profiles/images/sandbox-default/` | Sandbox image defaults (overridable via payloads) |
 
+## Testing
+
+Tested on macOS (arm64) with Podman. Linux support is expected but not yet validated.
+
+```bash
+make test             # vet + unit tests (5 packages)
+make lint             # golangci-lint
+make test-suite       # config parsing (23 tests, no gateway needed)
+make test-local       # full e2e on local Podman (22 tests)
+make test-kind        # self-contained kind cluster lifecycle
+make test-remote      # full e2e on OCP (needs KUBECONFIG)
+```
+
+`test-local` is the primary validation target. It deploys the gateway, registers all 4 providers, creates sandboxes, verifies exec/env/GWS token resolution/MCP config/Claude inference, tests missing-provider recovery, and tears down.
+
+`test-kind` creates its own kind cluster, builds and loads the sandbox image, runs the full flow, and deletes the cluster on exit. Use `KEEP=1` to keep the cluster for debugging.
+
+`test-remote` requires `KUBECONFIG` pointing at an OCP cluster. Use `--reuse-gateway` to skip deploy/teardown when iterating.
+
+Dev images must be pushed before integration tests will pass:
+
+```bash
+make dev-push         # build + push multi-arch sandbox image
+make test-local       # now sandbox create can pull the image
+```
+
 ## Documentation
 
 | Document | What it is |
