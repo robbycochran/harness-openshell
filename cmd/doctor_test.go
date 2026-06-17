@@ -76,8 +76,8 @@ func TestCheckTargetDeps_EmptyGateway_DefaultsToLocal(t *testing.T) {
 	if len(results) == 0 {
 		t.Fatal("expected at least 1 result")
 	}
-	if results[0].Name != "local" {
-		t.Errorf("Name = %q, want local (default)", results[0].Name)
+	if results[0].Name != "local-container" {
+		t.Errorf("Name = %q, want local-container (default)", results[0].Name)
 	}
 }
 
@@ -175,7 +175,7 @@ credentials:
 func TestDoctorOutputJSON(t *testing.T) {
 	results := []CheckResult{
 		{Group: "openshell", Name: "binary", Status: "pass", Message: "v0.0.63"},
-		{Group: "target", Name: "local", Status: "pass", Message: "podman running"},
+		{Group: "target", Name: "local-container", Status: "pass", Message: "podman running"},
 	}
 
 	err := printStructured(formatJSON, results)

@@ -138,15 +138,15 @@ func checkLocalDeps() []CheckResult {
 			if out, e := exec.Command("podman", "version", "--format", "{{.Client.Version}}").Output(); e == nil {
 				ver = " " + strings.TrimSpace(string(out))
 			}
-			return []CheckResult{{Group: "target", Name: "local", Status: "pass", Message: "podman" + ver + " running"}}
+			return []CheckResult{{Group: "target", Name: "local-container", Status: "pass", Message: "podman" + ver + " running"}}
 		}
 	}
 	if _, err := exec.LookPath("docker"); err == nil {
 		if err := exec.Command("docker", "info").Run(); err == nil {
-			return []CheckResult{{Group: "target", Name: "local", Status: "pass", Message: "docker running"}}
+			return []CheckResult{{Group: "target", Name: "local-container", Status: "pass", Message: "docker running"}}
 		}
 	}
-	return []CheckResult{{Group: "target", Name: "local", Status: "fail", Message: "no container runtime (podman or docker) responding"}}
+	return []CheckResult{{Group: "target", Name: "local-container", Status: "fail", Message: "no container runtime (podman or docker) responding"}}
 }
 
 func checkRemoteDeps() []CheckResult {
