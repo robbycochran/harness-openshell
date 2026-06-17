@@ -298,14 +298,6 @@ func (c *CLI) SandboxStatus() ([]SandboxInfo, error) {
 	return infos, nil
 }
 
-func (c *CLI) SandboxStop(name string) error {
-	return c.silent("sandbox", "stop", name)
-}
-
-func (c *CLI) SandboxStart(name string) error {
-	return c.silent("sandbox", "start", name)
-}
-
 func (c *CLI) SandboxDelete(name string) error {
 	return c.silent("sandbox", "delete", name)
 }

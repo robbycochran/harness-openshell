@@ -53,9 +53,18 @@ then deploy a sandbox. Use --dry-run to validate without deploying, or
 			if entrypoint != "" {
 				agentCfg.Entrypoint = entrypoint
 			}
+			if task != "" && !attach {
+				// Headless task: set TTY=false so BuildRunSh generates --print
+				f := false
+				agentCfg.TTY = &f
+			}
 			if task != "" {
 				if strings.HasPrefix(task, "@") {
-					agentCfg.Task = task[1:]
+					path := task[1:]
+					if path == "" {
+						return fmt.Errorf("--task @: missing file path after @")
+					}
+					agentCfg.Task = path
 				} else {
 					tmpTask, err := os.CreateTemp("", "harness-task-*.md")
 					if err != nil {
