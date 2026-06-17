@@ -250,8 +250,11 @@ func (c *CLI) SandboxCreate(opts SandboxCreateOpts) error {
 	if !opts.Keep {
 		args = append(args, "--no-keep")
 	}
-	for _, u := range opts.Uploads {
-		args = append(args, "--upload", u.Src+":"+u.Dst, "--no-git-ignore")
+	if len(opts.Uploads) > 0 {
+		for _, u := range opts.Uploads {
+			args = append(args, "--upload", u.Src+":"+u.Dst)
+		}
+		args = append(args, "--no-git-ignore")
 	}
 	if len(opts.Env) > 0 {
 		keys := make([]string, 0, len(opts.Env))
