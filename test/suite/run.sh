@@ -245,6 +245,124 @@ else
   echo ""
 fi
 
+# ── Provider registration tests (requires creds + gateway) ───────
+
+echo "=== Provider registration ==="
+
+if $LIVE && "$CLI" inference get >/dev/null 2>&1; then
+  # Clean slate
+  "$HARNESS" delete --sandboxes --providers >/dev/null 2>&1 || true
+
+  # GitHub (from-existing credential style)
+  if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+    run_test "provider: register github" \
+      "$HARNESS" apply --dry-run -f "$CONFIGS/agent-github-only.yaml"
+
+    run_test "provider: github live apply" \
+      "$HARNESS" apply -f "$CONFIGS/agent-github-only.yaml" --name test-gh
+
+    run_test "provider: github in openshell" \
+      bash -c '"$1" provider list 2>/dev/null | grep -q github' _ "$CLI"
+
+    "$HARNESS" delete test-gh >/dev/null 2>&1 || true
+  else
+    skip_test "provider: register github" "GITHUB_TOKEN not set"
+    skip_test "provider: github live apply" "GITHUB_TOKEN not set"
+    skip_test "provider: github in openshell" "GITHUB_TOKEN not set"
+  fi
+
+  # Atlassian (basic auth credential style)
+  if [[ -n "${JIRA_API_TOKEN:-}" ]]; then
+    run_test "provider: register atlassian" \
+      "$HARNESS" apply --dry-run -f "$CONFIGS/agent-atlassian.yaml"
+
+    run_test "provider: atlassian live apply" \
+      "$HARNESS" apply -f "$CONFIGS/agent-atlassian.yaml" --name test-atl
+
+    run_test "provider: atlassian in openshell" \
+      bash -c '"$1" provider list 2>/dev/null | grep -q atlassian' _ "$CLI"
+
+    "$HARNESS" delete test-atl >/dev/null 2>&1 || true
+  else
+    skip_test "provider: register atlassian" "JIRA_API_TOKEN not set"
+    skip_test "provider: atlassian live apply" "JIRA_API_TOKEN not set"
+    skip_test "provider: atlassian in openshell" "JIRA_API_TOKEN not set"
+  fi
+
+  # Vertex AI (ADC credential style)
+  if [[ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]]; then
+    run_test "provider: register vertex" \
+      "$HARNESS" apply --dry-run -f "$CONFIGS/agent-vertex.yaml"
+
+    run_test "provider: vertex live apply" \
+      "$HARNESS" apply -f "$CONFIGS/agent-vertex.yaml" --name test-vtx
+
+    run_test "provider: vertex in openshell" \
+      bash -c '"$1" provider list 2>/dev/null | grep -q vertex' _ "$CLI"
+
+    run_test "provider: inference route set" \
+      bash -c '"$1" inference get 2>/dev/null' _ "$CLI"
+
+    "$HARNESS" delete test-vtx >/dev/null 2>&1 || true
+  else
+    skip_test "provider: register vertex" "ANTHROPIC_VERTEX_PROJECT_ID not set"
+    skip_test "provider: vertex live apply" "ANTHROPIC_VERTEX_PROJECT_ID not set"
+    skip_test "provider: vertex in openshell" "ANTHROPIC_VERTEX_PROJECT_ID not set"
+    skip_test "provider: inference route set" "ANTHROPIC_VERTEX_PROJECT_ID not set"
+  fi
+
+  # GWS (OAuth refresh credential style)
+  if command -v gws >/dev/null 2>&1 && gws auth export --unmasked >/dev/null 2>&1; then
+    run_test "provider: register gws" \
+      "$HARNESS" apply --dry-run -f "$CONFIGS/agent-gws.yaml"
+
+    run_test "provider: gws live apply" \
+      "$HARNESS" apply -f "$CONFIGS/agent-gws.yaml" --name test-gws
+
+    run_test "provider: gws in openshell" \
+      bash -c '"$1" provider list 2>/dev/null | grep -q gws' _ "$CLI"
+
+    "$HARNESS" delete test-gws >/dev/null 2>&1 || true
+  else
+    skip_test "provider: register gws" "gws not authenticated"
+    skip_test "provider: gws live apply" "gws not authenticated"
+    skip_test "provider: gws in openshell" "gws not authenticated"
+  fi
+
+  # All providers together
+  if [[ -n "${GITHUB_TOKEN:-}" ]] && [[ -n "${JIRA_API_TOKEN:-}" ]] && [[ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]]; then
+    "$HARNESS" delete --sandboxes --providers >/dev/null 2>&1 || true
+
+    run_test "provider: all providers live apply" \
+      "$HARNESS" apply -f "$CONFIGS/agent-all-providers.yaml" --name test-all
+
+    run_test "provider: all providers cross-validate" \
+      bash -c 'providers=$("$1" provider list 2>/dev/null) && \
+        echo "$providers" | grep -q github && \
+        echo "$providers" | grep -q vertex && \
+        echo "$providers" | grep -q atlassian' _ "$CLI"
+
+    run_test "provider: harness get matches openshell" \
+      bash -c 'h=$("$1" get providers -o json 2>/dev/null) && \
+        echo "$h" | python3 -c "import sys,json; d=json.load(sys.stdin); assert len(d) >= 3, f\"expected >= 3 providers, got {len(d)}\""' _ "$HARNESS"
+
+    "$HARNESS" delete test-all >/dev/null 2>&1 || true
+    "$HARNESS" delete --providers >/dev/null 2>&1 || true
+  else
+    skip_test "provider: all providers live apply" "missing credentials"
+    skip_test "provider: all providers cross-validate" "missing credentials"
+    skip_test "provider: harness get matches openshell" "missing credentials"
+  fi
+else
+  if ! $LIVE; then
+    echo "  (skipped: use --live)"
+  else
+    echo "  (skipped: no gateway)"
+  fi
+fi
+
+echo ""
+
 # ── Free API provider tests (requires keys) ──────────────────────
 
 echo "=== Free API providers ==="
