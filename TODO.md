@@ -1,125 +1,79 @@
 # TODO — Roadmap
 
-## Architecture
+## Next up
 
-### Direct gRPC (future)
-- OpenShell gateway exposes 54 gRPC RPCs (proto files in NVIDIA/OpenShell repo)
-- Generate Go stubs from proto files -> `gateway.GRPC` implementation
-- Swap `gateway.NewCLI(cli)` -> `gateway.NewGRPC(conn)` -- one line change
-- Eliminates: openshell CLI binary dependency, output parsing fragility
-- Prerequisite: proto files stabilize (OpenShell is alpha)
+### `harness init`
+- [ ] Generate a default `harness.yaml` in the current directory
+- [ ] Detect available credentials and suggest providers
+- [ ] Print next steps ("run `harness apply -f harness.yaml`")
+- [ ] Highest-impact missing feature for standalone distribution
+
+### `harness doctor`
+- [ ] Check openshell installed and >= 0.0.59
+- [ ] Check podman/docker running
+- [ ] Check gateway reachable
+- [ ] Check credentials available (GITHUB_TOKEN, ADC, JIRA, GWS)
+- [ ] Actionable error messages ("install with: brew tap nvidia/openshell...")
 
 ### registerProviders should filter by agent's provider list
-- `registerProviders()` in `cmd/providers.go` uses the gateway config's provider
-  list, not the agent config's. When `gwCfg` is nil (common case), it tries to
-  register all providers regardless of what the agent needs.
-- Fix: pass the agent's provider names to `registerProviders` and use them as
-  a filter alongside (or instead of) the gateway config's list.
-- Files: `cmd/providers.go` (registerProviders signature), `cmd/executor.go` (call site)
+- `registerProviders()` in `cmd/providers.go` registers all providers regardless
+  of what the agent needs. Fix: filter by `agentCfg.ProviderNames()`.
 
 ## CLI [DONE]
 
-kubectl-style refactor complete (PRs #67-#70):
-- [x] `harness apply` with `--dry-run`, `-o yaml|json`, `--attach`, `-f`
+- [x] `harness apply` with `--dry-run`, `-o yaml|json`, `--attach`, `-f`, `--task`, `--entrypoint`
 - [x] `harness get agents|providers|gateways` with `-o table|json|yaml`
-- [x] `harness describe <name>`
+- [x] `harness describe <name>` with `-o table|json|yaml`
 - [x] `harness delete <name>` with `--all`, `--sandboxes`, `--providers`, `--k8s`
-- [x] `harness deploy`, `start`, `stop` unchanged
+- [x] `harness deploy [local|ocp|kind]`
+- [x] Headless task mode: `--task "text"` or `--task @file` runs agent with `--print`
+- [x] `kind: policy` applied via `openshell policy set` after sandbox creation
 - [x] `teardown` and `status` as hidden deprecated aliases
-- [x] Old commands (`up`, `create`, `render`) removed (PR #68)
+- [x] `up`, `create`, `render`, `start`, `stop` removed
 
-## Agent Config
+## Agent Config [DONE]
 
-### Multi-document harness YAML [DONE]
-- [x] `kind: agent/provider/gateway/policy` dispatch via `yaml.Decoder` loop
-- [x] `Harness` type with `ParseHarness`/`ParseHarnessFile`
-- [x] `RenderHarness` with built-in vs custom provider labeling
-- [x] Resolution: harness-local definitions > profiles/ tree > embedded defaults
+- [x] Multi-document harness YAML (`kind: agent/provider/gateway/payload/policy`)
+- [x] `kind: payload` with `sandbox_path`/`local_path`/`content` + multi-upload
+- [x] Agent-level `payloads:` list merged with document-level payloads
+- [x] `kind: config` kept as silent alias for backwards compat
+- [x] Image defaults overridable via payloads (no image rebuild needed)
 
-### `kind: config` — embed sandbox files in harness YAML
-- [ ] `kind: config` documents for `claude.json`, `CLAUDE.md`, `mcp.json`,
-      `opencode.json`, `settings.json`, `policy.yaml`
-- [ ] Parsed by `ParseHarness` and stored as `Harness.Configs map[string][]byte`
-- [ ] Rendered to payload directory by `RenderPayload` instead of baking into image
-- [ ] Keeps sandbox image minimal — all agent-specific config in the harness YAML
-- [ ] Example:
-  ```yaml
-  ---
-  kind: config
-  name: claude.json
-  content: |
-    {"mcpServers": {"atlassian": {"command": "mcp-atlassian"}}}
-  ---
-  kind: config
-  name: CLAUDE.md
-  content: |
-    You are working inside an OpenShell sandbox.
-  ```
-
-### Config reconciliation (`apply -o yaml`)
-- [ ] Resolves agent YAML against profiles/, defaults, and running gateway
-- [ ] Shows where each value came from (default, profile, harness file, env var)
-- [ ] Credentials rendered as `${VAR}` placeholders — shareable, replayable
+### Config reconciliation (`apply -o yaml`) -- future
+- [ ] Show where each value came from (default, profile, harness file, env var)
+- [ ] Credentials rendered as `${VAR}` placeholders
 - [ ] Round-trip: `apply -o yaml > snapshot.yaml && apply -f snapshot.yaml`
 
-### Provider abstraction layer
-- [ ] `kind: provider` targets `openshell provider create` today (imperative)
-- [ ] Abstraction supports future backends: gateway.toml (#1886), K8s CRDs (#1719)
-
 ### Future fields
-- [ ] `description` — one line of human-readable context per agent config
-- [ ] `repo` — git URL to clone into the sandbox at start
-- [ ] `secrets` — non-provider secrets to inject
+- [ ] `description` -- one line of human-readable context per agent config
+- [ ] `repo` -- git URL to clone into the sandbox at start
 
 ## Testing [DONE]
 
-Config test suite (PR #71): 37 tests across 7 categories.
-- [x] Config parsing, output formats, env resolution, CLI flags
-- [x] Live sandbox lifecycle (create, describe, exec, env injection, delete)
-- [x] Provider registration (github, atlassian, vertex, gws, all-providers)
-- [x] Agent integration (claude inference, opencode inference, gh cli, jira mcp, gws gmail)
-- [x] CI: config-suite in CI workflow, test-suite-live in integration workflow
+- [x] Config test suite: 37 tests across 7 categories
+- [x] Agent integration: claude + opencode inference, gh cli, jira mcp, gws gmail
+- [x] CI: config-suite + test-suite-live in workflows
 
-### Known gaps
-- [ ] OpenCode + Vertex inference in sandbox blocked by policy fields not supported in 0.0.59
-      (`allow_encoded_slash`, custom policy sections crash supervisor)
-- [ ] Local `podman build` on macOS produces images that behave differently than CI `docker build`
+## Architecture (future)
 
-## Upstream alignment
-
-### Plugin compatibility (#1851)
-- [ ] Binary naming: plan for `openshell-harness` (PATH-based plugin discovery)
-- [ ] Status: #1851 is `question` label, not accepted. Design standalone first.
-
-### Image building delegation
-- [ ] Evaluate delegating to `openshell-image-builder` for advanced image composition
-- [ ] Layered policy composition: base + agent-specific + user overlay
+### Direct gRPC
+- OpenShell gateway exposes 54 gRPC RPCs
+- Would eliminate CLI binary dependency and output parsing fragility
+- Prerequisite: proto files stabilize (OpenShell is alpha)
 
 ### Upstream issues to track
-- #1719 — K8s Operator design (affects provider CRDs, declarative config)
-- #1851 — Plugin system (affects binary naming, env var contract)
-- #1886 — Declarative provider config in gateway.toml (affects `kind: provider`)
-- #1922 — Portable sandbox log collection (affects observability)
-- #1933 — Centralized audit/event log (affects run recorder)
-
-## Release
-
-- [x] Add CHANGELOG.md
-- [x] Add LICENSE file (Apache 2.0)
-- [ ] `harness init` command for standalone binary distribution (no repo clone)
+- #1719 -- K8s Operator design (affects provider CRDs)
+- #1851 -- Plugin system (affects binary naming)
+- #1886 -- Declarative provider config in gateway.toml
+- #1922 -- Portable sandbox log collection
+- #1933 -- Centralized audit/event log
 
 ## Observability & Tracing
 
-Investigation (Jun 2026) validated paths for capturing agent session data.
-Langfuse hooks plugin installed and working. MLflow spiked. SigNoz identified
-as strongest OTel backend for full signal coverage.
+Langfuse hooks plugin working. MLflow spiked. SigNoz identified as strongest
+OTel backend. Integration deferred until `init`/`doctor` ship.
 
-### Harness integration (future)
-- [ ] `harness apply` auto-injects OTel env vars or configures Langfuse hooks
-- [ ] `harness runs list/show` queries traces from the backend
-- [ ] Headless mode (`harness run --task '...'`) records automatically
+## Release
 
-## Deferred
-
-- [ ] `harness init` -- generate default harness.yaml, print next steps (highest-impact missing feature)
-- [ ] Pre-flight checks in apply (openshell exists, podman running, credentials present)
+- [x] CHANGELOG.md + LICENSE (Apache 2.0)
+- [ ] `harness init` for standalone binary distribution
