@@ -1,0 +1,28 @@
+language: en-US
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  path_instructions:
+    - path: "**/*.go"
+      instructions: |
+        This is a Go CLI that wraps the OpenShell CLI. Focus on:
+        - Correct error handling (wrap with context, don't swallow)
+        - CLI argument construction (exec.Command, not shell)
+        - Credential handling (never log secrets, never pass via CLI args if avoidable)
+        - Gateway interface usage (code should go through the Gateway interface, not call openshell directly)
+    - path: "profiles/**/*.yaml"
+      instructions: |
+        These are OpenShell provider profiles and gateway configs.
+        Check that credential env_vars match what the Go code expects.
+        Check that endpoint hosts and ports are correct for the service.
+    - path: "test/**"
+      instructions: |
+        Integration test scripts. Check that gateway names match
+        the current naming (local-container, helm, openshift).
+        Check that test assertions match current CLI output format.
+chat:
+  auto_reply: true
