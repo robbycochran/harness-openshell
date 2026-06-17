@@ -218,7 +218,7 @@ func isGitRepo(dir string) bool {
 }
 
 func freshClone(repo, ref, dest string) error {
-	args := []string{"clone", "--depth", "1", "--recurse-submodules", "--shallow-submodules"}
+	args := []string{"clone", "--depth", "1"}
 	if ref != "" {
 		args = append(args, "--branch", ref)
 	}
@@ -226,7 +226,10 @@ func freshClone(repo, ref, dest string) error {
 	cmd := exec.Command("git", args...)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return err
+	}
+	return initSubmodules(dest)
 }
 
 func fetchRepo(dir, ref string) error {
@@ -252,11 +255,8 @@ func fetchRepo(dir, ref string) error {
 		return fmt.Errorf("git checkout %s: %w", target, err)
 	}
 
-	cmd = exec.Command("git", "-C", dir, "submodule", "update", "--init", "--recursive", "--depth", "1")
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git submodule update: %w", err)
+	if err := initSubmodules(dir); err != nil {
+		return err
 	}
 
 	// Clean untracked files from previous runs
@@ -265,6 +265,16 @@ func fetchRepo(dir, ref string) error {
 	cmd.Stderr = os.Stderr
 	cmd.Run()
 
+	return nil
+}
+
+func initSubmodules(dir string) error {
+	cmd := exec.Command("git", "-C", dir, "submodule", "update", "--init", "--depth", "1")
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git submodule update: %w", err)
+	}
 	return nil
 }
 
