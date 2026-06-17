@@ -226,6 +226,48 @@ credentials:
 	}
 }
 
+func TestCheckProviderEnvVars_GatewayManagedSkipsEnvCheck(t *testing.T) {
+	dir := t.TempDir()
+	writeProviderProfile(t, dir, "myoauth", `
+id: myoauth
+credentials:
+  - name: access_token
+    env_vars: [MY_TOKEN]
+    required: true
+    refresh:
+      strategy: oauth2_refresh_token
+`)
+
+	cfg := testAgentConfig(t)
+	cfg.Providers = []agent.ProviderRef{{Profile: "myoauth"}}
+
+	results := checkProviderEnvVars(cfg, "nonexistent-cli", dir)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Status == "fail" {
+		t.Errorf("gateway-managed credential should not fail env var check, got: %s", results[0].Message)
+	}
+}
+
+func TestProfileTypeFor(t *testing.T) {
+	tests := []struct {
+		name, want string
+	}{
+		{"github", "github"},
+		{"vertex-local", "google-vertex-ai"},
+		{"gws", "google-workspace"},
+		{"atlassian", "atlassian"},
+		{"custom", "custom"},
+	}
+	for _, tt := range tests {
+		got := profileTypeFor(tt.name)
+		if got != tt.want {
+			t.Errorf("profileTypeFor(%q) = %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
 // --- helpers ---
 
 func testAgentConfig(t *testing.T) *agent.AgentConfig {

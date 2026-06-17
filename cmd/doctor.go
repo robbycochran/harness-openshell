@@ -197,13 +197,18 @@ func checkRemoteDeps() []CheckResult {
 }
 
 type providerProfile struct {
-	ID          string `yaml:"id"`
-	DisplayName string `yaml:"display_name"`
-	Credentials []struct {
-		Name    string   `yaml:"name"`
-		EnvVars []string `yaml:"env_vars"`
-		Required bool    `yaml:"required"`
-	} `yaml:"credentials"`
+	ID          string              `yaml:"id"`
+	DisplayName string              `yaml:"display_name"`
+	Credentials []providerCredential `yaml:"credentials"`
+}
+
+type providerCredential struct {
+	Name     string   `yaml:"name"`
+	EnvVars  []string `yaml:"env_vars"`
+	Required bool     `yaml:"required"`
+	Refresh  *struct {
+		Strategy string `yaml:"strategy"`
+	} `yaml:"refresh,omitempty"`
 }
 
 func checkProviderEnvVars(cfg *agent.AgentConfig, cli, harnessDir string) []CheckResult {
@@ -224,12 +229,19 @@ func checkProviderEnvVars(cfg *agent.AgentConfig, cli, harnessDir string) []Chec
 			continue
 		}
 
+		allGatewayManaged := true
 		allSet := true
 		var missing []string
 		for _, cred := range profile.Credentials {
 			if !cred.Required {
 				continue
 			}
+			// Gateway-managed credentials (OAuth refresh, service account JWT)
+			// are handled by the gateway, not set by the user as env vars.
+			if cred.Refresh != nil {
+				continue
+			}
+			allGatewayManaged = false
 			found := false
 			for _, ev := range cred.EnvVars {
 				if os.Getenv(ev) != "" {
@@ -243,7 +255,10 @@ func checkProviderEnvVars(cfg *agent.AgentConfig, cli, harnessDir string) []Chec
 			}
 		}
 
-		if allSet {
+		if allGatewayManaged {
+			r := checkGatewayManagedProvider(p.Profile)
+			results = append(results, r)
+		} else if allSet {
 			results = append(results, CheckResult{
 				Group:   "provider",
 				Name:    p.Profile,
@@ -263,9 +278,53 @@ func checkProviderEnvVars(cfg *agent.AgentConfig, cli, harnessDir string) []Chec
 	return results
 }
 
+func checkGatewayManagedProvider(name string) CheckResult {
+	switch name {
+	case "gws":
+		gwsPath, _ := exec.LookPath("gws")
+		if gwsPath == "" {
+			return CheckResult{Group: "provider", Name: name, Status: "fail", Message: "gws CLI not installed (brew install googleworkspace/cli/gws)"}
+		}
+		if err := exec.Command(gwsPath, "auth", "export", "--unmasked").Run(); err != nil {
+			return CheckResult{Group: "provider", Name: name, Status: "fail", Message: "not authenticated (run: gws auth login)"}
+		}
+		return CheckResult{Group: "provider", Name: name, Status: "pass", Message: "authenticated (gateway-managed OAuth)"}
+	case "vertex-local":
+		home, _ := os.UserHomeDir()
+		adcPath := envOr("GOOGLE_APPLICATION_CREDENTIALS",
+			filepath.Join(home, ".config", "gcloud", "application_default_credentials.json"))
+		if _, err := os.Stat(adcPath); err != nil {
+			return CheckResult{Group: "provider", Name: name, Status: "fail", Message: "ADC not found (run: gcloud auth application-default login)"}
+		}
+		return CheckResult{Group: "provider", Name: name, Status: "pass", Message: "ADC found (gateway-managed refresh)"}
+	default:
+		return CheckResult{Group: "provider", Name: name, Status: "pass", Message: "gateway-managed credentials"}
+	}
+}
+
+// providerProfileType maps harness provider names to OpenShell profile IDs.
+// Most providers use the same name for both; these are the exceptions.
+var providerProfileType = map[string]string{
+	"vertex-local": "google-vertex-ai",
+	"gws":          "google-workspace",
+}
+
+func profileTypeFor(name string) string {
+	if t, ok := providerProfileType[name]; ok {
+		return t
+	}
+	return name
+}
+
 func loadProviderProfile(name, cli, harnessDir string) *providerProfile {
-	if profile := loadProfileFromOpenShell(name, cli); profile != nil {
+	profileType := profileTypeFor(name)
+	if profile := loadProfileFromOpenShell(profileType, cli); profile != nil {
 		return profile
+	}
+	if profileType != name {
+		if profile := loadProfileFromOpenShell(name, cli); profile != nil {
+			return profile
+		}
 	}
 	return loadProfileFromDisk(name, harnessDir)
 }
