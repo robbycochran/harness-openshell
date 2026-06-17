@@ -58,60 +58,75 @@ OpenShell's upstream direction is toward a [Kubernetes Operator](https://github.
 
 ## The Agent YAML
 
-A single file defines what runs, what credentials it gets, and what files are uploaded to the sandbox.
+A single file defines the entrypoint, credential providers, inference routing, environment, and files uploaded to the sandbox. This is the default config (`profiles/agent-default.yaml`):
 
 ```yaml
 name: agent
 entrypoint: claude
 tty: true
-repo: https://github.com/stackrox/collector   # cloned outside sandbox, uploaded in
 
 providers:
-  - profile: github
-  - profile: google-vertex-ai
-  - profile: atlassian
+  - profile: github                               # scoped GITHUB_TOKEN via proxy
+  - profile: google-vertex-ai                     # inference routing through gateway
+  - profile: atlassian                            # Jira/Confluence via mcp-atlassian
     env:
-      JIRA_URL:
+      JIRA_URL:                                   # empty = read from host env
       JIRA_USERNAME:
+  - profile: google-workspace                     # Gmail, Calendar, Drive via gws CLI
 
 env:
-  ANTHROPIC_BASE_URL: https://inference.local
+  ANTHROPIC_BASE_URL: https://inference.local     # route inference through gateway proxy
+  ANTHROPIC_API_KEY: sk-ant-openshell-proxy-managed
+  CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1"
 
 payloads:
-  - sandbox_path: /sandbox/.claude/CLAUDE.md
+  - sandbox_path: /sandbox/.claude/CLAUDE.md      # agent instructions
     local_path: profiles/images/sandbox-default/CLAUDE.md
-  - sandbox_path: /sandbox/.mcp.json
+  - sandbox_path: /sandbox/.claude.json           # claude code settings
+    local_path: profiles/images/sandbox-default/claude.json
+  - sandbox_path: /sandbox/.claude/settings.json  # permissions and defaults
+    local_path: profiles/images/sandbox-default/settings.json
+  - sandbox_path: /sandbox/.mcp.json              # MCP server config (jira, confluence)
     local_path: profiles/images/sandbox-default/mcp.json
 ```
 
+Credentials never enter the sandbox -- the gateway proxy resolves placeholder tokens at the network boundary. Each provider also contributes its own L7 network policy endpoints and binary allowlists.
+
+Use `harness apply -o yaml` to see the fully resolved config -- providers expand to show credential definitions, endpoint policies, scopes, and refresh strategies.
+
 ### Multi-document YAML
 
-Bundle agent, providers, payloads, and policy in one file:
+Bundle agent, providers, payloads, and policy in one self-contained file. Use `base_agent` to inherit from an existing config:
 
 ```yaml
 ---
 kind: agent
-name: cpp-reviewer
-entrypoint: claude
-providers:
-  - profile: github
----
-kind: provider
-name: github
-type: github
-credentials: [GITHUB_TOKEN]
+name: security-reviewer
+base_agent: default                               # inherits providers, env, payloads
+repo: https://github.com/stackrox/collector
+task: "review for memory safety issues"
 ---
 kind: payload
 sandbox_path: /sandbox/.claude/CLAUDE.md
 content: |
-  You are a C++ security review agent.
+  You are a C++ security review agent specializing in RAII,
+  move semantics, and concurrency safety. Focus on the
+  highest-priority remediation and explain the fix.
 ---
 kind: policy
 network_policies:
-  github:
+  github_git:
     endpoints:
-      - { host: "api.github.com", port: 443 }
+      - host: github.com
+        port: 443
+        rules:
+          - allow: { method: GET, path: "/**/info/refs*" }
+          - allow: { method: POST, path: "/**/git-upload-pack" }
+    binaries:
+      - { path: /usr/bin/git }
 ```
+
+This inherits all four providers and inference routing from `agent-default.yaml`, adds a custom CLAUDE.md as the agent's instructions, and defines an L7 policy that allows git clone but blocks git push at the HTTP method level.
 
 ## How It Works
 
