@@ -96,7 +96,7 @@ func upLocal(opts upLocalOpts) error {
 
 	status.Header("Sandbox")
 	var sandboxCmd []string
-	if noTTY {
+	if noTTY && agentCfg.Task == "" {
 		sandboxCmd = []string{"true"}
 	} else {
 		sandboxCmd = []string{"bash", "/sandbox/.config/openshell/run.sh"}
