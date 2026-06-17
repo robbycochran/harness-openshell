@@ -3,7 +3,9 @@
 Declarative configuration harness for [OpenShell](https://github.com/NVIDIA/OpenShell) AI agent sandboxes.
 
 ```bash
-harness apply -f agent.yaml
+harness init              # generate a config
+harness doctor            # check your environment
+harness apply -f harness.yaml   # launch a sandbox
 ```
 
 ## OpenShell provides the runtime
@@ -12,6 +14,7 @@ harness apply -f agent.yaml
 
 ## The harness adds declarative configuration
 
+- **Guided setup** -- `harness init` generates a config, `harness doctor` validates your environment
 - **One-file agent definition** -- agent, providers, gateway, policy, and sandbox files in a single YAML
 - **Multi-document YAML** -- `kind: agent/provider/gateway/payload/policy` composed in one file
 - **Payload files** -- upload configs to sandbox paths without rebuilding the image
@@ -47,29 +50,41 @@ Or build from source: `make cli`
 ## Quick Start
 
 ```bash
-# Set credentials (missing ones are skipped gracefully)
-export GITHUB_TOKEN=ghp_...
+# 1. Generate a config (picks entrypoint, providers, gateway target)
+harness init
 
-# Deploy a sandbox with the default agent config
-harness apply -f profiles/agent-default.yaml
+# 2. Check your environment
+harness doctor
 
+# 3. Launch the sandbox
+harness apply -f harness.yaml
+```
+
+That's it. `init` asks three questions and writes a `harness.yaml`. `doctor` tells you if anything is missing. `apply` launches the sandbox.
+
+### More examples
+
+```bash
 # Run a task headlessly (agent outputs to stdout)
-harness apply -f profiles/agent-default.yaml --task "review this codebase for security issues"
+harness apply -f harness.yaml --task "review this codebase for security issues"
 
 # Run a task from a file
-harness apply -f profiles/agent-default.yaml --task @tasks/review.md
+harness apply -f harness.yaml --task @tasks/review.md
 
 # Interactive mode
-harness apply -f profiles/agent-default.yaml --attach
+harness apply -f harness.yaml --attach
 
 # Validate without deploying
-harness apply -f profiles/agent-default.yaml --dry-run
+harness apply -f harness.yaml --dry-run
 
 # See the fully resolved config
-harness apply -f profiles/agent-default.yaml -o yaml
+harness apply -f harness.yaml -o yaml
 
 # Override the entrypoint
-harness apply -f profiles/agent-default.yaml --entrypoint opencode
+harness apply -f harness.yaml --entrypoint opencode
+
+# Use a profile directly (skip init)
+harness apply -f profiles/agent-default.yaml
 ```
 
 ## The Agent YAML
@@ -147,14 +162,16 @@ harness deploy ocp                                                # deploy gatew
 ## How It Works
 
 ```
-harness CLI --> openshell CLI --> Gateway (Podman or K8s)
-                                   |-- Provider credentials
-                                   |-- L7 network policy
-                                   |-- inference.local proxy
-                                   +-- Sandbox container
-                                        |-- claude / opencode
-                                        |-- gh, mcp-atlassian, gws
-                                        +-- placeholder tokens
+harness init -----> harness.yaml (your config)
+harness doctor ---> validates environment
+harness apply ---> openshell CLI --> Gateway (Podman or K8s)
+                                      |-- Provider credentials
+                                      |-- L7 network policy
+                                      |-- inference.local proxy
+                                      +-- Sandbox container
+                                           |-- claude / opencode
+                                           |-- gh, mcp-atlassian, gws
+                                           +-- placeholder tokens
 ```
 
 The harness orchestrates three OpenShell components:
@@ -170,9 +187,21 @@ See the [OpenShell docs](https://github.com/NVIDIA/OpenShell) for the full secur
 ### Commands
 
 ```
+harness init [--output FILE] [--force] [--non-interactive]
+    Generate a harness.yaml config file.
+    Prompts for entrypoint, providers, and gateway target.
+    Discovers available providers from openshell.
+    --non-interactive writes the embedded default without prompts.
+    --force overwrites an existing file.
+
+harness doctor [-f FILE] [-o table|json|yaml]
+    Validate that your environment can run the configured sandbox.
+    Phase 1 (offline): checks openshell, target deps, provider credentials.
+    Phase 2 (online): checks provider registration if gateway is reachable.
+    Exit 0 if ready, exit 1 if something is missing.
+
 harness apply -f FILE [--task TEXT|@FILE] [--entrypoint NAME] [--gateway NAME] [--attach] [--dry-run] [-o yaml|json]
     Deploy a sandboxed agent from a config file.
-    -f is required -- always specify which config to apply.
     --task runs the agent headlessly with a task (inline text or @filepath).
     --entrypoint overrides the agent entrypoint (claude, opencode, bash).
     --attach enables interactive TTY mode.
