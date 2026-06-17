@@ -341,25 +341,28 @@ if $LIVE && "$CLI" inference get >/dev/null 2>&1; then
       bash -c 'h=$("$1" get providers -o json 2>/dev/null) && \
         echo "$h" | python3 -c "import sys,json; d=json.load(sys.stdin); assert len(d) >= 3, f\"expected >= 3 providers, got {len(d)}\""' _ "$HARNESS"
 
-    # Functionality: test real API calls from inside the all-providers sandbox
-    run_test "func: github api from sandbox" \
-      "$CLI" sandbox exec --name test-all -- \
-        bash -c 'curl -sf -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user -o /dev/null'
+    # Functionality: test real API access using proper tools (not raw curl).
+    # OpenShell's proxy resolves credentials per-binary based on provider
+    # profile binaries lists. Use gh CLI for GitHub, gws for Gmail, etc.
 
-    run_test "func: jira api from sandbox" \
+    run_test "func: github via gh cli" \
       "$CLI" sandbox exec --name test-all -- \
-        bash -c 'curl -sf -u "$JIRA_USERNAME:$JIRA_API_TOKEN" "$JIRA_URL/rest/api/2/myself" -o /dev/null'
+        bash -c 'gh api user --jq .login 2>/dev/null | grep -q .'
 
-    run_test "func: inference route from sandbox" \
+    run_test "func: jira via curl (proxy auth)" \
+      "$CLI" sandbox exec --name test-all -- \
+        bash -c 'curl -sf "$JIRA_URL/rest/api/2/myself" -o /dev/null'
+
+    run_test "func: inference.local reachable" \
       "$CLI" sandbox exec --name test-all -- \
         bash -c 'curl -sf https://inference.local/v1/models 2>/dev/null | head -1 | grep -q .'
 
     if command -v gws >/dev/null 2>&1 && gws auth export --unmasked >/dev/null 2>&1; then
-      run_test "func: gmail api from sandbox" \
+      run_test "func: gmail via gws cli" \
         "$CLI" sandbox exec --name test-all -- \
-          bash -c 'for i in 1 2 3; do curl -sf https://gmail.googleapis.com/gmail/v1/users/me/profile -H "Authorization: Bearer $GOOGLE_WORKSPACE_CLI_TOKEN" -o /dev/null && exit 0; sleep 2; done; exit 1'
+          bash -c 'gws gmail profile 2>/dev/null | grep -q @'
     else
-      skip_test "func: gmail api from sandbox" "gws not authenticated"
+      skip_test "func: gmail via gws cli" "gws not authenticated"
     fi
 
     "$HARNESS" delete test-all >/dev/null 2>&1 || true
