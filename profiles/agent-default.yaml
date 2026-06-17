@@ -23,13 +23,13 @@ env:
   CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1"
 
 payloads:
-  - path: /sandbox/.claude/CLAUDE.md
-    file: profiles/images/sandbox-default/CLAUDE.md
-  - path: /sandbox/.claude.json
-    file: profiles/images/sandbox-default/claude.json
-  - path: /sandbox/.claude/settings.json
-    file: profiles/images/sandbox-default/settings.json
-  - path: /sandbox/.mcp.json
-    file: profiles/images/sandbox-default/mcp.json
-  - path: /etc/openshell/policy.yaml
-    file: profiles/images/sandbox-default/policy.yaml
+  - sandbox_path: /sandbox/.claude/CLAUDE.md
+    local_path: profiles/images/sandbox-default/CLAUDE.md
+  - sandbox_path: /sandbox/.claude.json
+    local_path: profiles/images/sandbox-default/claude.json
+  - sandbox_path: /sandbox/.claude/settings.json
+    local_path: profiles/images/sandbox-default/settings.json
+  - sandbox_path: /sandbox/.mcp.json
+    local_path: profiles/images/sandbox-default/mcp.json
+  - sandbox_path: /etc/openshell/policy.yaml
+    local_path: profiles/images/sandbox-default/policy.yaml

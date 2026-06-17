@@ -555,12 +555,12 @@ name: test
 providers: []
 ---
 kind: payload
-path: /sandbox/.claude.json
+sandbox_path: /sandbox/.claude.json
 content: |
   {"mcpServers": {}}
 ---
 kind: payload
-path: /sandbox/.claude/CLAUDE.md
+sandbox_path: /sandbox/.claude/CLAUDE.md
 content: |
   # Test
   Hello world.
@@ -572,8 +572,8 @@ content: |
 	if len(h.Payloads) != 2 {
 		t.Fatalf("Payloads = %d, want 2", len(h.Payloads))
 	}
-	if h.Payloads[0].Path != "/sandbox/.claude.json" {
-		t.Errorf("Payloads[0].Path = %q", h.Payloads[0].Path)
+	if h.Payloads[0].SandboxPath != "/sandbox/.claude.json" {
+		t.Errorf("Payloads[0].SandboxPath = %q", h.Payloads[0].SandboxPath)
 	}
 	if !strings.Contains(h.Payloads[1].Content, "Hello world") {
 		t.Errorf("Payloads[1].Content = %q", h.Payloads[1].Content)
@@ -594,7 +594,7 @@ content: |
 	if err == nil {
 		t.Fatal("expected error for payload without path")
 	}
-	if !strings.Contains(err.Error(), "requires a path") {
+	if !strings.Contains(err.Error(), "requires a sandbox_path") {
 		t.Errorf("error = %q", err)
 	}
 }
@@ -606,13 +606,13 @@ name: test
 providers: []
 ---
 kind: payload
-path: /sandbox/empty.txt
+sandbox_path: /sandbox/empty.txt
 `)
 	_, err := ParseHarness(data)
 	if err == nil {
 		t.Fatal("expected error for payload without content or file")
 	}
-	if !strings.Contains(err.Error(), "requires content or file") {
+	if !strings.Contains(err.Error(), "requires content or local_path") {
 		t.Errorf("error = %q", err)
 	}
 }
@@ -624,9 +624,9 @@ name: test
 providers: []
 ---
 kind: payload
-path: /sandbox/test.txt
+sandbox_path: /sandbox/test.txt
 content: hello
-file: test.txt
+local_path: test.txt
 `)
 	_, err := ParseHarness(data)
 	if err == nil {
@@ -644,7 +644,7 @@ name: test
 providers: []
 ---
 kind: config
-path: /sandbox/.claude.json
+sandbox_path: /sandbox/.claude.json
 content: |
   {"test": true}
 `)
@@ -663,7 +663,7 @@ kind: agent
 name: test
 providers: []
 payloads:
-  - path: /sandbox/.mcp.json
+  - sandbox_path: /sandbox/.mcp.json
     content: |
       {"servers": {}}
 `)
@@ -674,15 +674,15 @@ payloads:
 	if len(h.Payloads) != 1 {
 		t.Fatalf("Payloads = %d, want 1", len(h.Payloads))
 	}
-	if h.Payloads[0].Path != "/sandbox/.mcp.json" {
-		t.Errorf("Path = %q", h.Payloads[0].Path)
+	if h.Payloads[0].SandboxPath != "/sandbox/.mcp.json" {
+		t.Errorf("Path = %q", h.Payloads[0].SandboxPath)
 	}
 }
 
 func TestResolvePayloads_Content(t *testing.T) {
 	tmpDir := t.TempDir()
 	payloads := []PayloadEntry{
-		{Path: "/sandbox/.claude.json", Content: `{"test": true}`},
+		{SandboxPath: "/sandbox/.claude.json", Content: `{"test": true}`},
 	}
 	uploads, err := ResolvePayloads(payloads, t.TempDir(), tmpDir)
 	if err != nil {
@@ -707,7 +707,7 @@ func TestResolvePayloads_File(t *testing.T) {
 	baseDir := t.TempDir()
 	os.WriteFile(filepath.Join(baseDir, "test.json"), []byte(`{"from": "file"}`), 0o644)
 	payloads := []PayloadEntry{
-		{Path: "/sandbox/test.json", File: "test.json"},
+		{SandboxPath: "/sandbox/test.json",  LocalPath: "test.json"},
 	}
 	uploads, err := ResolvePayloads(payloads, baseDir, t.TempDir())
 	if err != nil {
@@ -727,7 +727,7 @@ func TestResolvePayloads_File(t *testing.T) {
 
 func TestResolvePayloads_InvalidPath(t *testing.T) {
 	payloads := []PayloadEntry{
-		{Path: "/etc/passwd", Content: "bad"},
+		{SandboxPath: "/etc/passwd", Content: "bad"},
 	}
 	_, err := ResolvePayloads(payloads, t.TempDir(), t.TempDir())
 	if err == nil {

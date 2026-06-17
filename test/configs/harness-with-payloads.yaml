@@ -4,16 +4,16 @@ name: test-payloads
 entrypoint: bash
 providers: []
 payloads:
-  - path: /sandbox/.agent-config.json
+  - sandbox_path: /sandbox/.agent-config.json
     content: |
       {"inline": true}
 ---
 kind: payload
-path: /sandbox/.claude.json
+sandbox_path: /sandbox/.claude.json
 content: |
   {"mcpServers": {"test": {"command": "echo"}}}
 ---
 kind: payload
-path: /sandbox/readme.txt
+sandbox_path: /sandbox/readme.txt
 content: |
   This is a test payload.
