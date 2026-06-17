@@ -21,6 +21,9 @@ endpoints:
     access: read-write
     enforcement: enforce
 binaries:
+  - /usr/local/bin/claude
+  - /usr/local/bin/opencode
   - /usr/bin/curl
+  - /usr/bin/node
   - /sandbox/.venv/bin/python
   - /sandbox/.venv/bin/python3
