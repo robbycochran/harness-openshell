@@ -8,7 +8,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  id-token: write  # for Workload Identity Federation
+  id-token: write  # for Workload Identity Federation (future)
 
 jobs:
   improve:
@@ -34,10 +34,14 @@ jobs:
 
       - name: Authenticate to GCP
         if: steps.guard.outputs.skip != 'true'
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+        run: |
+          echo '${{ secrets.GCP_ADC_JSON }}' > /tmp/adc.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/adc.json" >> "$GITHUB_ENV"
+        # TODO: switch to Workload Identity Federation when ITPC registers stackrox org
+        # uses: google-github-actions/auth@v2
+        # with:
+        #   workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+        #   service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - uses: actions/setup-go@v5
         if: steps.guard.outputs.skip != 'true'
